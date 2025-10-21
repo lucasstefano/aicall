@@ -9,6 +9,7 @@
   "dependencies": {
     "express": "^4.19.2",
     "twilio": "^4.22.0",
-    "ws": "^8.17.0"
+    "ws": "^8.17.0",
+    "@google-cloud/speech": "^5.5.0"
   }
 }
