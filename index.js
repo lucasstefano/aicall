@@ -45,14 +45,15 @@ app.post("/make-call", async (req, res) => {
 app.post("/twiml", (req, res) => {
   const response = new twilio.twiml.VoiceResponse();
 
-  // Mensagem inicial
   response.say({ voice: "alice", language: "pt-BR" }, "Oi, estamos te ouvindo!");
 
-  // Inicia streaming de áudio
-  const start = response.start();
-  start.stream({ url: `wss://${new URL(baseUrl).host}/media-stream` });
+  // ✅ Usa o baseUrl completo trocando http → ws
+  const wsUrl = `${baseUrl.replace(/^http/, "ws")}/media-stream`;
+  console.log("🔗 Streaming de áudio configurado para:", wsUrl);
 
-  // Mantém a chamada viva por 60s
+  const start = response.start();
+  start.stream({ url: wsUrl });
+
   response.pause({ length: 60 });
 
   res.type("text/xml");
@@ -60,13 +61,13 @@ app.post("/twiml", (req, res) => {
 });
 
 // =============================
-// 3️⃣ Função para converter μ-law para Linear16
+// 3️⃣ Conversão μ-law → Linear16
 // =============================
 function muLawToLinear16(muLawBuffer) {
   const linear16 = Buffer.alloc(muLawBuffer.length * 2);
   for (let i = 0; i < muLawBuffer.length; i++) {
     const mu = muLawBuffer[i];
-    const sign = (mu & 0x80) ? -1 : 1;
+    const sign = mu & 0x80 ? -1 : 1;
     const exponent = (mu >> 4) & 0x07;
     const mantissa = mu & 0x0f;
     const sample = sign * (((mantissa << (exponent + 3)) + (1 << (exponent + 2)) - 132));
@@ -76,11 +77,12 @@ function muLawToLinear16(muLawBuffer) {
 }
 
 // =============================
-// 4️⃣ WebSocket do Media Stream + STT
+// 4️⃣ WebSocket + STT com logs
 // =============================
 const wss = new WebSocketServer({ noServer: true });
 
 function createSTTStream() {
+  console.log("🎙️ Criando stream de STT...");
   return clientSTT
     .streamingRecognize({
       config: {
@@ -92,7 +94,7 @@ function createSTTStream() {
     })
     .on("data", (data) => {
       if (data.results[0] && data.results[0].alternatives[0]) {
-        console.log("📝 STT:", data.results[0].alternatives[0].transcript);
+        console.log("📝 Transcrição:", data.results[0].alternatives[0].transcript);
       }
     })
     .on("error", (err) => {
@@ -100,39 +102,52 @@ function createSTTStream() {
     });
 }
 
-wss.on("connection", (ws) => {
-  console.log("🎧 Novo stream de áudio conectado");
+wss.on("connection", (ws, req) => {
+  console.log("🎧 Novo stream de áudio conectado do Twilio!");
   const sttStream = createSTTStream();
+  let mediaCount = 0;
 
   ws.on("message", (msg) => {
-    const data = JSON.parse(msg.toString());
+    try {
+      const data = JSON.parse(msg.toString());
+      switch (data.event) {
+        case "start":
+          console.log("🚀 Stream iniciado:", data.start.callSid);
+          break;
 
-    switch (data.event) {
-      case "start":
-        console.log("🚀 SStream iniciado:", data.start.callSid);
-        break;
+        case "media":
+          mediaCount++;
+          if (mediaCount % 50 === 0) console.log(`📡 Pacotes recebidos: ${mediaCount}`);
 
-      case "media":
-        // Decodifica Base64 e converte μ-law → Linear16
-        const audioBuffer = Buffer.from(data.media.payload, "base64");
-        const linearBuffer = muLawToLinear16(audioBuffer);
-        sttStream.write(linearBuffer);
-        break;
+          const audioBuffer = Buffer.from(data.media.payload, "base64");
+          const linearBuffer = muLawToLinear16(audioBuffer);
 
-      case "stop":
-        console.log("🛑 SStream encerrado");
-        sttStream.end();
-        break;
+          // envia áudio para STT
+          sttStream.write(linearBuffer);
+          break;
+
+        case "stop":
+          console.log("🛑 Stream encerrado");
+          sttStream.end();
+          break;
+
+        default:
+          console.log("🔍 Evento não reconhecido:", data.event);
+      }
+    } catch (err) {
+      console.error("⚠️ Erro ao processar mensagem WS:", err);
+      console.log("Mensagem original:", msg.toString());
     }
   });
 
   ws.on("close", () => {
+    console.log("🔒 Conexão WS fechada.");
     sttStream.end();
   });
 });
 
 // =============================
-// 5️⃣ Servidor HTTP + WebSocket
+// 5️⃣ Servidor HTTP + WS
 // =============================
 const server = app.listen(process.env.PORT || 8080, () => {
   console.log("🚀 Servidor iniciado na porta", process.env.PORT || 8080);
