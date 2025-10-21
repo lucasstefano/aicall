@@ -1,29 +1,34 @@
 import express from "express";
 import twilio from "twilio";
 import WebSocket, { WebSocketServer } from "ws";
+import speech from "@google-cloud/speech";
+import { Buffer } from "buffer";
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-// 🔒 Variáveis de ambiente (configuradas no Cloud Run)
+// 🔒 Variáveis de ambiente
 const accountSid = process.env.TWILIO_ACCOUNT_SID;
 const authToken = process.env.TWILIO_AUTH_TOKEN;
 const fromNumber = process.env.TWILIO_PHONE_NUMBER;
 const baseUrl = process.env.BASE_URL;
 const client = twilio(accountSid, authToken);
 
+// Google STT client
+const clientSTT = new speech.SpeechClient();
+
 // =============================
 // 1️⃣ Endpoint: iniciar chamada
 // =============================
 app.post("/make-call", async (req, res) => {
-  const to = "+5521988392219"; // 👈 Muda pro número de destino
+  const to = req.body.to || "+5521988392219";
 
   try {
     const call = await client.calls.create({
       to,
       from: fromNumber,
-      url: `${baseUrl}/twiml`, // Twilio busca TwiML aqui
+      url: `${baseUrl}/twiml`,
     });
 
     console.log("✅ Chamada iniciada:", call.sid);
@@ -43,7 +48,7 @@ app.post("/twiml", (req, res) => {
   // Mensagem inicial
   response.say({ voice: "alice", language: "pt-BR" }, "Oi, estamos te ouvindo!");
 
-  // Inicia o streaming de áudio
+  // Inicia streaming de áudio
   const start = response.start();
   start.stream({ url: `wss://${new URL(baseUrl).host}/media-stream` });
 
@@ -55,12 +60,33 @@ app.post("/twiml", (req, res) => {
 });
 
 // =============================
-// 3️⃣ WebSocket do Media Stream
+// 3️⃣ WebSocket do Media Stream + STT
 // =============================
 const wss = new WebSocketServer({ noServer: true });
 
+function createSTTStream() {
+  return clientSTT
+    .streamingRecognize({
+      config: {
+        encoding: "LINEAR16",
+        sampleRateHertz: 8000, // Twilio envia 8kHz
+        languageCode: "pt-BR",
+      },
+      interimResults: true,
+    })
+    .on("data", (data) => {
+      if (data.results[0] && data.results[0].alternatives[0]) {
+        console.log("📝 STT:", data.results[0].alternatives[0].transcript);
+      }
+    })
+    .on("error", (err) => {
+      console.error("❌ Erro no STT:", err);
+    });
+}
+
 wss.on("connection", (ws) => {
   console.log("🎧 Novo stream de áudio conectado");
+  const sttStream = createSTTStream();
 
   ws.on("message", (msg) => {
     const data = JSON.parse(msg.toString());
@@ -69,17 +95,28 @@ wss.on("connection", (ws) => {
       case "start":
         console.log("🚀 Stream iniciado:", data.start.callSid);
         break;
+
       case "media":
-        console.log("🎤 Pacote de áudio:", data.media.payload?.slice(0, 20), "...");
+        // Decodifica Base64 e envia para STT
+        const audioBuffer = Buffer.from(data.media.payload, "base64");
+        sttStream.write(audioBuffer);
         break;
+
       case "stop":
         console.log("🛑 Stream encerrado");
+        sttStream.end();
         break;
     }
   });
+
+  ws.on("close", () => {
+    sttStream.end();
+  });
 });
 
-// Vincula o WebSocket ao servidor HTTP
+// =============================
+// 4️⃣ Servidor HTTP + WebSocket
+// =============================
 const server = app.listen(process.env.PORT || 8080, () => {
   console.log("🚀 Servidor iniciado na porta", process.env.PORT || 8080);
 });
