@@ -8,124 +8,160 @@ const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
+// 🔒 Variáveis de ambiente (configuradas no Cloud Run)
 const accountSid = process.env.TWILIO_ACCOUNT_SID;
 const authToken = process.env.TWILIO_AUTH_TOKEN;
 const fromNumber = process.env.TWILIO_PHONE_NUMBER;
 const baseUrl = process.env.BASE_URL;
+const client = twilio(accountSid, authToken);
 
-// -------------------------
-// 🎙️ Google STT client
-// -------------------------
-const speechClient = new speech.SpeechClient();
-function startSTTStream() {
-  const request = {
-    config: {
-      encoding: "LINEAR16",
-      sampleRateHertz: 8000,
-      languageCode: "pt-BR",
-    },
-    interimResults: true,
-  };
-  const recognizeStream = speechClient
-    .streamingRecognize(request)
-    .on("error", (err) => console.error("❌ Erro STT:", err))
-    .on("data", (data) => {
-      const result = data.results?.[0];
-      if (result) {
-        const transcription = result.alternatives[0].transcript;
-        console.log(`🗣️ ${transcription}`);
-      }
-    });
-  return recognizeStream;
-}
+// 🎤 Cliente STT
+const clientSTT = new speech.SpeechClient();
 
-// -------------------------
-// 🧠 Conversão μ-law → PCM16
-// -------------------------
-function muLawToLinear16(muLawBuffer) {
-  const MULAW_MAX = 0x1FFF;
-  const MULAW_BIAS = 33;
-  const linear16Buffer = Buffer.alloc(muLawBuffer.length * 2);
-  for (let i = 0; i < muLawBuffer.length; i++) {
-    let muLaw = ~muLawBuffer[i];
-    let sign = (muLaw & 0x80) ? -1 : 1;
-    let exponent = (muLaw >> 4) & 0x07;
-    let mantissa = muLaw & 0x0F;
-    let magnitude = ((mantissa << 4) + MULAW_BIAS) << (exponent + 3);
-    let sample = sign * (magnitude - MULAW_MAX);
-    linear16Buffer.writeInt16LE(sample, i * 2);
-  }
-  return linear16Buffer;
-}
-
-// -------------------------
-// 📞 Endpoint de ligação
-// -------------------------
+// =============================
+// 1️⃣ Endpoint: iniciar chamada
+// =============================
 app.post("/make-call", async (req, res) => {
-  const client = twilio(accountSid, authToken);
-  const to = req.body.to;
+  const to = req.body.to || "+55SEUNUMEROAQUI";
+
   try {
     const call = await client.calls.create({
       to,
       from: fromNumber,
       url: `${baseUrl}/twiml`,
     });
-    console.log(`✅ Chamada iniciada: ${call.sid}`);
-    res.send({ success: true, callSid: call.sid });
-  } catch (err) {
-    console.error("Erro ao iniciar chamada:", err);
-    res.status(500).send("Erro ao iniciar chamada");
+
+    console.log("✅ Chamada iniciada:", call.sid);
+    res.json({ message: "Chamada iniciada", sid: call.sid });
+  } catch (error) {
+    console.error("❌ Erro ao criar chamada:", error.message);
+    res.status(500).send(error.message);
   }
 });
 
-// -------------------------
-// 🔊 TwiML Stream
-// -------------------------
+// =============================
+// 2️⃣ Endpoint: TwiML (voz + stream)
+// =============================
 app.post("/twiml", (req, res) => {
-  const twiml = new twilio.twiml.VoiceResponse();
-  const connect = twiml.connect();
-  connect.stream({ url: `${baseUrl.replace("https", "wss")}/media-stream` });
+  const response = new twilio.twiml.VoiceResponse();
+
+  response.say({ voice: "alice", language: "pt-BR" }, "Oi, estamos te ouvindo!");
+
+  // inicia streaming
+  const start = response.start();
+  const wsUrl = `${baseUrl.replace(/^http/, "ws")}/media-stream`;
+  start.stream({ url: wsUrl });
+
+  response.pause({ length: 60 });
+
   res.type("text/xml");
-  res.send(twiml.toString());
+  res.send(response.toString());
 });
 
-// -------------------------
-// 🔌 WebSocket Server
-// -------------------------
+// =============================
+// 3️⃣ Função: decodificar μ-law → PCM
+// =============================
+function muLawDecodeSample(sample) {
+  const MULAW_MAX = 0x1FFF;
+  const MULAW_BIAS = 33;
+  sample = ~sample;
+  let sign = (sample & 0x80) ? -1 : 1;
+  let exponent = (sample & 0x70) >> 4;
+  let mantissa = sample & 0x0F;
+  let magnitude = ((mantissa << 4) + MULAW_BIAS) << (exponent + 2);
+  return sign * (magnitude > MULAW_MAX ? MULAW_MAX : magnitude);
+}
+
+function decodeMuLaw(buffer) {
+  const decoded = new Int16Array(buffer.length);
+  for (let i = 0; i < buffer.length; i++) {
+    decoded[i] = muLawDecodeSample(buffer[i]);
+  }
+  return Buffer.from(decoded.buffer);
+}
+
+// =============================
+// 4️⃣ Função: criar stream STT
+// =============================
+function createSTTStream() {
+  const sttStream = clientSTT
+    .streamingRecognize({
+      config: {
+        encoding: "LINEAR16",
+        sampleRateHertz: 8000,
+        languageCode: "pt-BR",
+      },
+      interimResults: true,
+    })
+    .on("data", (data) => {
+      if (data.results[0]?.alternatives[0]) {
+        console.log("🗣️ Transcrição:", data.results[0].alternatives[0].transcript);
+      }
+    })
+    .on("error", (err) => console.error("❌ Erro STT:", err));
+
+  return sttStream;
+}
+
+// =============================
+// 5️⃣ WebSocket do Twilio Media Stream
+// =============================
 const wss = new WebSocketServer({ noServer: true });
-let packetCount = 0;
 
 wss.on("connection", (ws) => {
   console.log("🎧 Novo stream de áudio conectado");
-  const sttStream = startSTTStream();
+  const sttStream = createSTTStream();
+
+  let packetCount = 0;
+  const interval = setInterval(() => {
+    console.log(`📡 Pacotes recebidos: ${packetCount}`);
+  }, 1000);
 
   ws.on("message", (msg) => {
-    const data = JSON.parse(msg.toString());
-    if (data.event === "media") {
-      const audioBytes = Buffer.from(data.media.payload, "base64");
-      const pcm16 = muLawToLinear16(audioBytes);
-      sttStream.write(pcm16);
-      packetCount++;
-      if (packetCount % 50 === 0) console.log(`📡 Pacotes recebidos: ${packetCount}`);
-    }
-    if (data.event === "stop") {
-      console.log("🛑 Stream encerrado");
-      sttStream.end();
+    try {
+      const data = JSON.parse(msg.toString());
+
+      switch (data.event) {
+        case "start":
+          console.log("🚀 Stream iniciado:", data.start.callSid);
+          break;
+        case "media":
+          packetCount++;
+          const audio = Buffer.from(data.media.payload, "base64");
+          const decoded = decodeMuLaw(audio);
+          sttStream.write(decoded);
+          break;
+        case "stop":
+          console.log("🛑 Stream encerrado");
+          sttStream.end();
+          break;
+      }
+    } catch (err) {
+      console.error("❌ Erro ao processar mensagem:", err);
     }
   });
 
   ws.on("close", () => {
+    clearInterval(interval);
     console.log("🔒 Conexão WS fechada.");
     sttStream.end();
   });
 });
 
-const server = app.listen(8080, () => {
-  console.log("🚀 Servidor HTTP iniciado na porta 8080");
+// =============================
+// 6️⃣ Servidor HTTP + WS Upgrade
+// =============================
+const port = process.env.PORT || 8080;
+const server = app.listen(port, () => {
+  console.log(`🚀 Servidor iniciado na porta ${port}`);
 });
 
 server.on("upgrade", (req, socket, head) => {
   if (req.url === "/media-stream") {
-    wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      wss.emit("connection", ws, req);
+    });
+  } else {
+    socket.destroy();
   }
 });
