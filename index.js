@@ -7,9 +7,9 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
 // 🔒 Variáveis de ambiente (configuradas no Cloud Run)
-const accountSid = process.env.ACCOUNT_SID;
-const authToken = process.env.AUTH_TOKEN;
-const fromNumber = process.env.PHONE_NUMBER;
+const accountSid = process.env.TWILIO_ACCOUNT_SID;
+const authToken = process.env.TWILIO_AUTH_TOKEN;
+const fromNumber = process.env.TWILIO_PHONE_NUMBER;
 const baseUrl = process.env.BASE_URL;
 const client = twilio(accountSid, authToken);
 
