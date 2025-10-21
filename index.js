@@ -60,7 +60,23 @@ app.post("/twiml", (req, res) => {
 });
 
 // =============================
-// 3️⃣ WebSocket do Media Stream + STT
+// 3️⃣ Função para converter μ-law para Linear16
+// =============================
+function muLawToLinear16(muLawBuffer: Buffer) {
+  const linear16 = Buffer.alloc(muLawBuffer.length * 2);
+  for (let i = 0; i < muLawBuffer.length; i++) {
+    const mu = muLawBuffer[i];
+    const sign = (mu & 0x80) ? -1 : 1;
+    const exponent = (mu >> 4) & 0x07;
+    const mantissa = mu & 0x0f;
+    const sample = sign * (((mantissa << (exponent + 3)) + (1 << (exponent + 2)) - 132));
+    linear16.writeInt16LE(sample, i * 2);
+  }
+  return linear16;
+}
+
+// =============================
+// 4️⃣ WebSocket do Media Stream + STT
 // =============================
 const wss = new WebSocketServer({ noServer: true });
 
@@ -69,7 +85,7 @@ function createSTTStream() {
     .streamingRecognize({
       config: {
         encoding: "LINEAR16",
-        sampleRateHertz: 8000, // Twilio envia 8kHz
+        sampleRateHertz: 8000,
         languageCode: "pt-BR",
       },
       interimResults: true,
@@ -97,9 +113,10 @@ wss.on("connection", (ws) => {
         break;
 
       case "media":
-        // Decodifica Base64 e envia para STT
+        // Decodifica Base64 e converte μ-law → Linear16
         const audioBuffer = Buffer.from(data.media.payload, "base64");
-        sttStream.write(audioBuffer);
+        const linearBuffer = muLawToLinear16(audioBuffer);
+        sttStream.write(linearBuffer);
         break;
 
       case "stop":
@@ -115,7 +132,7 @@ wss.on("connection", (ws) => {
 });
 
 // =============================
-// 4️⃣ Servidor HTTP + WebSocket
+// 5️⃣ Servidor HTTP + WebSocket
 // =============================
 const server = app.listen(process.env.PORT || 8080, () => {
   console.log("🚀 Servidor iniciado na porta", process.env.PORT || 8080);
