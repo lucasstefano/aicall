@@ -62,7 +62,7 @@ app.post("/twiml", (req, res) => {
 // =============================
 // 3️⃣ Função para converter μ-law para Linear16
 // =============================
-function muLawToLinear16(muLawBuffer: Buffer) {
+function muLawToLinear16(muLawBuffer) {
   const linear16 = Buffer.alloc(muLawBuffer.length * 2);
   for (let i = 0; i < muLawBuffer.length; i++) {
     const mu = muLawBuffer[i];
@@ -109,7 +109,7 @@ wss.on("connection", (ws) => {
 
     switch (data.event) {
       case "start":
-        console.log("🚀 Stream iniciado:", data.start.callSid);
+        console.log("🚀 SStream iniciado:", data.start.callSid);
         break;
 
       case "media":
@@ -120,7 +120,7 @@ wss.on("connection", (ws) => {
         break;
 
       case "stop":
-        console.log("🛑 Stream encerrado");
+        console.log("🛑 SStream encerrado");
         sttStream.end();
         break;
     }
