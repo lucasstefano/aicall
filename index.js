@@ -2,7 +2,6 @@ import express from "express";
 import twilio from "twilio";
 import WebSocket, { WebSocketServer } from "ws";
 import speech from "@google-cloud/speech";
-import { Buffer } from "buffer";
 import { VertexAI } from '@google-cloud/vertexai';
 
 const app = express();
