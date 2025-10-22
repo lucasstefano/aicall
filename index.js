@@ -2,6 +2,7 @@ import express from "express";
 import twilio from "twilio";
 import WebSocket, { WebSocketServer } from "ws";
 import speech from "@google-cloud/speech";
+import { Buffer } from "buffer";
 import { VertexAI } from '@google-cloud/vertexai';
 
 const app = express();
@@ -14,7 +15,10 @@ const clientSTT = new speech.SpeechClient();
 // =============================
 // 🧠 Configuração Vertex AI Gemini
 // =============================
-const vertex_ai = new VertexAI();
+const vertex_ai = new VertexAI({
+  project: process.env.GCLOUD_PROJECT,
+  location: process.env.GCLOUD_LOCATION,
+});
 
 const model = 'gemini-2.0-flash-001';
 const generativeModel = vertex_ai.getGenerativeModel({
