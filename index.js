@@ -9,7 +9,12 @@ const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+const accountSid = process.env.TWILIO_ACCOUNT_SID;
+const authToken = process.env.TWILIO_AUTH_TOKEN;
+const fromNumber = process.env.TWILIO_PHONE_NUMBER;
+const baseUrl = process.env.BASE_URL;
+
+const client = twilio(accountSid, authToken);
 const clientSTT = new speech.SpeechClient();
 
 // =============================
@@ -96,7 +101,7 @@ class ResponseQueue {
       // 🔥 Mantém o stream aberto para continuar ouvindo
       const start = twiml.start();
       start.stream({ 
-        url: `wss://${new URL(process.env.BASE_URL).host}/media-stream`,
+        url: `wss://${new URL(baseUrl).host}/media-stream`,
         track: "inbound_track"
       });
       
@@ -330,7 +335,7 @@ class AudioStreamSession {
   }
 
   sendToWebhook(type, data) {
-    const webhookUrl = `${process.env.BASE_URL}/transcription-webhook`;
+    const webhookUrl = `${baseUrl}/transcription-webhook`;
     const payload = {
       callSid: this.callSid,
       type: type,
@@ -433,7 +438,7 @@ app.post("/twiml", (req, res) => {
 
     const start = response.start();
     start.stream({ 
-      url: `wss://${new URL(process.env.BASE_URL).host}/media-stream`,
+      url: `wss://${new URL(baseUrl).host}/media-stream`,
       track: "inbound_track"
     });
 
@@ -458,10 +463,10 @@ app.post("/make-call", async (req, res) => {
   try {
     const call = await client.calls.create({
       to: to.trim(),
-      from: process.env.TWILIO_PHONE_NUMBER,
-      url: `${process.env.BASE_URL}/twiml`,
+      from: fromNumber,
+      url: `${baseUrl}/twiml`,
       timeout: 15,
-      statusCallback: `${process.env.BASE_URL}/call-status`,
+      statusCallback: `${baseUrl}/call-status`,
       statusCallbackEvent: ["answered", "completed"],
     });
 
