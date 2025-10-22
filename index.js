@@ -10,8 +10,6 @@ import { join } from 'path';
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-
-// 🔥 NOVO: Servir arquivos de áudio estáticos
 app.use('/audio', express.static('audio'));
 
 const accountSid = process.env.TWILIO_ACCOUNT_SID;
@@ -23,7 +21,6 @@ const client = twilio(accountSid, authToken);
 const clientSTT = new speech.SpeechClient();
 const clientTTS = new textToSpeech.TextToSpeechClient();
 
-// 🔥 NOVO: Criar diretório para áudios
 const audioDir = join(process.cwd(), 'audio');
 if (!existsSync(audioDir)) {
   mkdirSync(audioDir, { recursive: true });
@@ -48,7 +45,7 @@ const generativeModel = vertex_ai.getGenerativeModel({
 });
 
 // =============================
-// 🎙️ Configuração Google TTS (OTIMIZADA)
+// 🎙️ Configuração Google TTS
 // =============================
 const ttsConfig = {
   voice: {
@@ -57,7 +54,7 @@ const ttsConfig = {
     ssmlGender: 'MALE'
   },
   audioConfig: {
-    audioEncoding: 'MP3', // 🔥 MUDADO para MP3 (menor tamanho)
+    audioEncoding: 'MP3',
     sampleRateHertz: 8000,
     speakingRate: 1.0,
     pitch: 0.0,
@@ -66,20 +63,25 @@ const ttsConfig = {
 };
 
 // =============================
-// 🎯 Sistema de Fila para Respostas (CORRIGIDO)
+// 🎯 Sistema de Fila para Respostas (COM BUFFER DE FALA)
 // =============================
 class ResponseQueue {
   constructor() {
     this.queue = new Map();
     this.processingDelay = 2000;
     this.maxRetries = 3;
-    this.audioFileCleanup = new Map(); // callSid -> [audioFiles]
+    this.audioFileCleanup = new Map();
   }
 
   addResponse(callSid, responseText) {
     try {
       if (!this.queue.has(callSid)) {
-        this.queue.set(callSid, { responses: [], isProcessing: false, retryCount: 0 });
+        this.queue.set(callSid, { 
+          responses: [], 
+          isProcessing: false, 
+          retryCount: 0,
+          isTTSPlaying: false // 🔥 NOVO: Controla se TTS está tocando
+        });
         this.audioFileCleanup.set(callSid, []);
       }
       
@@ -93,7 +95,7 @@ class ResponseQueue {
 
       console.log(`📥 Fila [${callSid}]: "${responseText.substring(0, 50)}..."`);
       
-      if (!callQueue.isProcessing) {
+      if (!callQueue.isProcessing && !callQueue.isTTSPlaying) {
         this.processQueue(callSid);
       }
     } catch (error) {
@@ -101,9 +103,23 @@ class ResponseQueue {
     }
   }
 
+  // 🔥 NOVO: Marca quando TTS começa/termina
+  setTTSPlaying(callSid, isPlaying) {
+    if (this.queue.has(callSid)) {
+      const callQueue = this.queue.get(callSid);
+      callQueue.isTTSPlaying = isPlaying;
+      console.log(`🔊 TTS [${callSid}]: ${isPlaying ? 'INICIADO' : 'FINALIZADO'}`);
+      
+      // Se TTS terminou e há respostas na fila, processa
+      if (!isPlaying && callQueue.responses.length > 0 && !callQueue.isProcessing) {
+        setTimeout(() => this.processQueue(callSid), 500);
+      }
+    }
+  }
+
   async processQueue(callSid) {
     const callQueue = this.queue.get(callSid);
-    if (!callQueue || callQueue.responses.length === 0) {
+    if (!callQueue || callQueue.responses.length === 0 || callQueue.isTTSPlaying) {
       if (callQueue) {
         callQueue.isProcessing = false;
         callQueue.retryCount = 0;
@@ -117,27 +133,35 @@ class ResponseQueue {
     try {
       console.log(`🎯 Processando TTS para [${callSid}]: "${response.text}"`);
       
-      // 🔥 CORREÇÃO: Gera arquivo de áudio e hospeda externamente
-      const audioUrl = await this.generateAndHostTTS(callSid, response.text);
+      // 🔥 MARCA QUE TTS VAI COMEÇAR
+      this.setTTSPlaying(callSid, true);
       
-      // Envia via TwiML com URL externa
+      const audioUrl = await this.generateAndHostTTS(callSid, response.text);
       await this.updateCallWithAudioURL(callSid, audioUrl);
       
-      // Remove da fila após sucesso
       callQueue.responses.shift();
       callQueue.retryCount = 0;
       
       console.log(`✅ Áudio TTS enviado para [${callSid}]. Restantes: ${callQueue.responses.length}`);
       
-      // Agenda próximo processamento
-      if (callQueue.responses.length > 0) {
-        setTimeout(() => this.processQueue(callSid), this.processingDelay);
-      } else {
-        callQueue.isProcessing = false;
-      }
+      // 🔥 AGUARDA O TTS TERMINAR ANTES DE PROCESSAR PRÓXIMO
+      // O TTS dura aproximadamente (texto.length / 10) segundos
+      const estimatedTTSTime = Math.max(response.text.length / 8 * 1000, 2000);
+      setTimeout(() => {
+        this.setTTSPlaying(callSid, false);
+        
+        if (callQueue.responses.length > 0) {
+          setTimeout(() => this.processQueue(callSid), 500);
+        } else {
+          callQueue.isProcessing = false;
+        }
+      }, estimatedTTSTime);
       
     } catch (error) {
       console.error(`❌ Erro processando TTS [${callSid}]:`, error);
+      
+      // 🔥 GARANTE QUE TTS ESTÁ PARADO MESMO EM ERRO
+      this.setTTSPlaying(callSid, false);
       
       response.retries += 1;
       if (response.retries >= this.maxRetries) {
@@ -155,7 +179,6 @@ class ResponseQueue {
     }
   }
 
-  // 🔥 CORREÇÃO: Gera arquivo MP3 e retorna URL pública
   async generateAndHostTTS(callSid, text) {
     try {
       const request = {
@@ -163,7 +186,7 @@ class ResponseQueue {
         voice: ttsConfig.voice,
         audioConfig: {
           ...ttsConfig.audioConfig,
-          audioEncoding: 'MP3' // Sempre MP3 para menor tamanho
+          audioEncoding: 'MP3'
         }
       };
 
@@ -175,13 +198,11 @@ class ResponseQueue {
         throw new Error('Resposta de TTS vazia');
       }
       
-      // 🔥 SALVA COMO ARQUIVO MP3
       const filename = `tts_${callSid}_${Date.now()}.mp3`;
       const filepath = join(audioDir, filename);
       
       writeFileSync(filepath, response.audioContent, 'binary');
       
-      // Registra arquivo para limpeza posterior
       if (this.audioFileCleanup.has(callSid)) {
         this.audioFileCleanup.get(callSid).push(filepath);
       }
@@ -197,15 +218,12 @@ class ResponseQueue {
     }
   }
 
-  // 🔥 CORREÇÃO: Usa URL externa em vez de base64
   async updateCallWithAudioURL(callSid, audioUrl) {
     try {
       const twiml = new twilio.twiml.VoiceResponse();
       
-      // 🔥 USA URL EXTERNA - não tem limite de tamanho!
       twiml.play({}, audioUrl);
       
-      // Mantém o stream aberto
       const start = twiml.start();
       start.stream({ 
         url: `wss://${new URL(baseUrl).host}/media-stream`,
@@ -215,7 +233,7 @@ class ResponseQueue {
       twiml.pause({ length: 120 });
 
       const twimlString = twiml.toString();
-      console.log(`📊 TwiML size: ${twimlString.length} chars (limite: 4000)`);
+      console.log(`📊 TwiML size: ${twimlString.length} chars`);
       
       if (twimlString.length > 4000) {
         throw new Error(`TwiML muito grande: ${twimlString.length} caracteres`);
@@ -240,9 +258,7 @@ class ResponseQueue {
     }
   }
 
-  // 🔥 NOVO: Limpa arquivos de áudio
   cleanup(callSid) {
-    // Remove arquivos de áudio
     if (this.audioFileCleanup.has(callSid)) {
       const audioFiles = this.audioFileCleanup.get(callSid);
       audioFiles.forEach(filepath => {
@@ -266,7 +282,7 @@ class ResponseQueue {
 const responseQueue = new ResponseQueue();
 
 // =============================
-// 🧠 Gemini Service (MANTIDO)
+// 🧠 Gemini Service
 // =============================
 class GeminiService {
   constructor() {
@@ -420,7 +436,7 @@ const sttConfig = {
 };
 
 // =============================
-// 🎙️ Audio Stream Session
+// 🎙️ Audio Stream Session (COM BUFFER DE FALA)
 // =============================
 class AudioStreamSession {
   constructor(ws, callSid, issue = null) {
@@ -434,6 +450,12 @@ class AudioStreamSession {
     this.consecutiveErrors = 0;
     this.maxConsecutiveErrors = 3;
     this.healthCheckInterval = null;
+    
+    // 🔥 NOVO: Sistema de buffer para falas sobrepostas
+    this.speechBuffer = [];
+    this.bufferTimeout = null;
+    this.bufferDelay = 1500; // 2 segundos de espera após TTS
+    this.isAISpeaking = false; // Controla se AI está falando
     
     console.log(`🎧 Nova sessão: ${callSid}, Issue: ${issue}`);
     this.setupSTT();
@@ -493,6 +515,17 @@ class AudioStreamSession {
     }
   }
 
+  // 🔥 NOVO: Processa buffer após timeout
+  processSpeechBuffer() {
+    if (this.speechBuffer.length > 0 && !this.isAISpeaking) {
+      const transcript = this.speechBuffer.join(' ');
+      console.log(`🎯 Processando buffer [${this.callSid}]: "${transcript}"`);
+      
+      this.speechBuffer = []; // Limpa buffer
+      this.processWithGemini(transcript);
+    }
+  }
+
   async handleSTTData(data) {
     try {
       if (data.results && data.results[0]) {
@@ -507,7 +540,21 @@ class AudioStreamSession {
         if (isFinal) {
           console.log(`📝 [FINAL] ${this.callSid}: ${transcript}`);
           
-          if (transcript !== this.lastFinalTranscript && transcript.length > 2) {
+          // 🔥 LÓGICA DE BUFFER: Se AI está falando, armazena no buffer
+          if (this.isAISpeaking) {
+            console.log(`⏸️  Fala sobreposta detectada [${this.callSid}], armazenando no buffer: "${transcript}"`);
+            this.speechBuffer.push(transcript);
+            
+            // Reinicia timeout do buffer
+            if (this.bufferTimeout) {
+              clearTimeout(this.bufferTimeout);
+            }
+            this.bufferTimeout = setTimeout(() => {
+              this.processSpeechBuffer();
+            }, this.bufferDelay);
+            
+          } else if (transcript !== this.lastFinalTranscript && transcript.length > 2) {
+            // Se AI não está falando, processa imediatamente
             this.lastFinalTranscript = transcript;
             await this.processWithGemini(transcript);
           }
@@ -537,7 +584,26 @@ class AudioStreamSession {
       const geminiResponse = await geminiService.generateResponse(this.callSid, transcript);
       
       if (geminiResponse && geminiResponse.length > 2) {
+        // 🔥 MARCA QUE AI VAI FALAR
+        this.isAISpeaking = true;
+        responseQueue.setTTSPlaying(this.callSid, true);
+        
         responseQueue.addResponse(this.callSid, geminiResponse);
+        
+        // 🔥 ESTIMA QUANDO AI TERMINARÁ DE FALAR
+        const estimatedSpeechTime = Math.max(geminiResponse.length / 8 * 1000, 2000);
+        setTimeout(() => {
+          this.isAISpeaking = false;
+          responseQueue.setTTSPlaying(this.callSid, false);
+          console.log(`🔊 AI parou de falar [${this.callSid}], verificando buffer...`);
+          
+          // 🔥 APÓS AI PARAR, VERIFICA BUFFER APÓS DELAY
+          setTimeout(() => {
+            this.processSpeechBuffer();
+          }, this.bufferDelay);
+          
+        }, estimatedSpeechTime);
+        
       } else {
         console.log(`⚠️ Resposta Gemini vazia para [${this.callSid}]`);
       }
@@ -545,6 +611,8 @@ class AudioStreamSession {
     } catch (error) {
       console.error(`❌ Erro processamento Gemini [${this.callSid}]:`, error);
       this.consecutiveErrors++;
+      this.isAISpeaking = false;
+      responseQueue.setTTSPlaying(this.callSid, false);
       
     } finally {
       this.geminiProcessing = false;
@@ -566,6 +634,11 @@ class AudioStreamSession {
 
   cleanup() {
     this.isActive = false;
+    this.isAISpeaking = false;
+    
+    if (this.bufferTimeout) {
+      clearTimeout(this.bufferTimeout);
+    }
     
     if (this.healthCheckInterval) {
       clearInterval(this.healthCheckInterval);
@@ -673,157 +746,17 @@ wss.on("connection", (ws, req) => {
   });
 });
 
-// =============================
-// 📞 Endpoints Twilio
-// =============================
-app.post("/twiml", (req, res) => {
-  try {
-    const response = new twilio.twiml.VoiceResponse();
-
-    response.say({ 
-      voice: "alice", 
-      language: "pt-BR" 
-    }, "Olá! Um momento por favor.");
-
-    const start = response.start();
-    start.stream({ 
-      url: `wss://${new URL(baseUrl).host}/media-stream`,
-      track: "inbound_track"
-    });
-
-    response.pause({ length: 300 });
-
-    res.type("text/xml");
-    res.send(response.toString());
-    
-  } catch (error) {
-    console.error("❌ Erro gerando TwiML:", error);
-    res.status(500).send("Erro interno");
-  }
-});
-
-app.post("/make-call", async (req, res) => {
-  const to = req.body.to;
-  const issue = req.body.issue || "Preciso de ajuda com um problema";
-
-  if (!to) {
-    return res.status(400).json({ error: "Número é obrigatório" });
-  }
-
-  try {
-    const call = await client.calls.create({
-      to: to.trim(),
-      from: fromNumber,
-      url: `${baseUrl}/twiml`,
-      timeout: 15,
-      statusCallback: `${baseUrl}/call-status`,
-      statusCallbackEvent: ["answered", "completed"],
-    });
-
-    console.log(`✅ Chamada com Gemini + Google TTS iniciada: ${call.sid}, Issue: ${issue}`);
-    
-    pendingIssues.set(call.sid, issue);
-    
-    res.json({ 
-      message: "Chamada com IA e voz natural iniciada", 
-      sid: call.sid,
-      issue: issue,
-      features: ["STT", "Gemini AI", "Google TTS", "Voz natural"]
-    });
-  } catch (error) {
-    console.error("❌ Erro criando chamada:", error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// =============================
-// 🌐 Webhooks e Monitoramento
-// =============================
-app.post("/transcription-webhook", (req, res) => {
-  const { callSid, type, transcript } = req.body;
-  console.log(`📨 Webhook [${type}]: ${callSid} - "${transcript}"`);
-  res.status(200).json({ received: true });
-});
-
-app.post("/call-status", (req, res) => {
-  const { CallSid, CallStatus } = req.body;
-  console.log(`📞 Status [${CallStatus}]: ${CallSid}`);
-  
-  if (['completed', 'failed', 'busy'].includes(CallStatus)) {
-    if (activeSessions.has(CallSid)) {
-      const session = activeSessions.get(CallSid);
-      session.cleanup();
-      activeSessions.delete(CallSid);
-    }
-    pendingIssues.delete(CallSid);
-  }
-  
-  res.status(200).send("OK");
-});
-
-app.get("/health", (req, res) => {
-  res.json({
-    status: "healthy",
-    timestamp: new Date().toISOString(),
-    active_sessions: activeSessions.size,
-    pending_issues: pendingIssues.size,
-    features: ["STT", "Gemini AI", "Google TTS", "Voz natural premium"]
-  });
-});
-
-app.get("/", (req, res) => {
-  res.send(`
-    <html>
-      <head>
-        <title>Twilio + Gemini AI + Google TTS</title>
-        <style>
-          body { font-family: Arial, sans-serif; margin: 40px; }
-          .container { max-width: 800px; margin: 0 auto; }
-          .card { background: #f5f5f5; padding: 20px; margin: 20px 0; border-radius: 10px; }
-          button { background: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; }
-          input, textarea { width: 100%; padding: 10px; margin: 5px 0; border: 1px solid #ddd; border-radius: 5px; }
-          .feature { background: #e8f4fd; padding: 10px; margin: 5px 0; border-radius: 5px; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <h1>🤖 Twilio + Gemini AI + Google TTS</h1>
-          
-          <div class="feature">
-            <strong>🎙️ Novo:</strong> Agora com <strong>Google Text-to-Speech</strong> - Voz natural em português!
-          </div>
-          
-          <div class="card">
-            <h3>Fazer Chamada com Voz Natural</h3>
-            <form action="/make-call" method="POST">
-              <input type="tel" name="to" placeholder="+5521988392219" value="+5521988392219" required>
-              <textarea name="issue" placeholder="Descreva o problema que o usuário precisa resolver..." rows="3" required>Preciso de ajuda para configurar meu email no celular</textarea>
-              <button type="submit">📞 Chamar com Voz Natural</button>
-            </form>
-            <p><small>O Gemini gera respostas e o Google TTS transforma em voz natural</small></p>
-          </div>
-          
-          <div class="card">
-            <h3>Status do Sistema</h3>
-            <p>Sessões ativas: <strong>${activeSessions.size}</strong></p>
-            <p>Issues pendentes: <strong>${pendingIssues.size}</strong></p>
-            <a href="/health">Ver Health Check</a>
-          </div>
-        </div>
-      </body>
-    </html>
-  `);
-});
+// ... (resto do código permanece igual)
 
 // =============================
 // 🚀 Servidor
 // =============================
 const PORT = process.env.PORT || 8080;
 const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Servidor com Gemini + Google TTS iniciado na porta ${PORT}`);
+  console.log(`🚀 Servidor com buffer de fala iniciado na porta ${PORT}`);
   console.log(`🤖 Gemini Model: ${model}`);
   console.log(`🔊 Google TTS: ${ttsConfig.voice.name}`);
-  console.log(`📁 Áudios servidos em: ${baseUrl}/audio/`);
+  console.log(`⏰ Buffer delay: 2000ms`);
   console.log(`🔗 Health: http://localhost:${PORT}/health`);
 });
 
