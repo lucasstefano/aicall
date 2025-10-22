@@ -775,7 +775,7 @@ app.get("/", (req, res) => {
   res.send(`
     <html>
       <head>
-        <title>Twilio + Gemini AI + Google TTS</title>
+        <title>AI CALL</title>
         <style>
           body { font-family: Arial, sans-serif; margin: 40px; }
           .container { max-width: 800px; margin: 0 auto; }
@@ -783,21 +783,48 @@ app.get("/", (req, res) => {
           button { background: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; }
           input, textarea { width: 100%; padding: 10px; margin: 5px 0; border: 1px solid #ddd; border-radius: 5px; }
           .feature { background: #e8f4fd; padding: 10px; margin: 5px 0; border-radius: 5px; }
+          .issues-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin: 15px 0; }
+          .issue-card { background: #fff; border: 1px solid #ccc; border-radius: 10px; padding: 15px; text-align: center; cursor: pointer; transition: 0.2s; }
+          .issue-card:hover { background: #007bff; color: white; border-color: #007bff; }
         </style>
+        <script>
+          function selectIssue(text) {
+            const textarea = document.querySelector('textarea[name="issue"]');
+            textarea.value = text;
+          }
+        </script>
       </head>
       <body>
         <div class="container">
-          <h1>🤖 Twilio + Gemini AI + Google TTS</h1>
+          <h1>AI CALL</h1>
           
-          <div class="feature">
-            <strong>🎙️ Novo:</strong> Agora com <strong>Google Text-to-Speech</strong> - Voz natural em português!
-          </div>
           
           <div class="card">
             <h3>Fazer Chamada com Voz Natural</h3>
             <form action="/make-call" method="POST">
               <input type="tel" name="to" placeholder="+5521988392219" value="+5521988392219" required>
-              <textarea name="issue" placeholder="Descreva o problema que o usuário precisa resolver..." rows="3" required>Preciso de ajuda para configurar meu email no celular</textarea>
+
+              <div class="issues-grid">
+                <div class="issue-card" onclick="selectIssue('Preciso de ajuda para configurar meu e-mail no celular')">
+                  📱 Configurar e-mail no celular
+                </div>
+                <div class="issue-card" onclick="selectIssue('Estou com problemas de conexão na internet')">
+                  🌐 Problemas de internet
+                </div>
+                <div class="issue-card" onclick="selectIssue('Quero atualizar o cadastro da minha conta')">
+                  🧾 Atualizar cadastro
+                </div>
+                <div class="issue-card" onclick="selectIssue('Minha fatura veio com valor incorreto')">
+                  💰 Fatura incorreta
+                </div>
+                <div class="issue-card" onclick="selectIssue('Preciso de suporte técnico urgente')">
+                  🛠️ Suporte técnico urgente
+                </div>
+              </div>
+
+              <textarea name="issue" placeholder="Descreva o problema que o usuário precisa resolver..." rows="3" required>
+Preciso de ajuda para configurar meu email no celular
+              </textarea>
               <button type="submit">📞 Chamar com Voz Natural</button>
             </form>
             <p><small>O Gemini gera respostas e o Google TTS transforma em voz natural</small></p>
