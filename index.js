@@ -290,14 +290,14 @@ class ResponseQueue {
 const responseQueue = new ResponseQueue();
 
 // =============================
-// 🧠 Gemini Service (ATUALIZADO)
+// 🧠 Gemini Service (ATUALIZADO PARA CONVERSA FLUIDA)
 // =============================
 class GeminiService {
   constructor() {
     this.conversationHistory = new Map();
     this.userIssues = new Map();
-    this.userNames = new Map(); // 🔥 NOVO: Armazena nomes dos usuários
-    this.maxHistoryLength = 6;
+    this.userNames = new Map();
+    this.maxHistoryLength = 8; // 🔥 AUMENTADO para manter mais contexto
   }
 
   // 🔥 ATUALIZADO: Agora recebe o nome do usuário
@@ -391,17 +391,23 @@ Sua mensagem:`;
     }
   }
 
-  async generateResponse(callSid, userMessage) {
+  // 🔥 ATUALIZADO: Agora aceita múltiplas mensagens para conversa fluida
+  async generateResponse(callSid, userMessages) {
     try {
+      // Se for array, junta as mensagens
+      const userMessage = Array.isArray(userMessages) 
+        ? userMessages.join(" ") 
+        : userMessages;
+      
       const history = this.getConversationHistory(callSid);
       const issue = this.userIssues.get(callSid);
       const userName = this.userNames.get(callSid);
       
-      const recentHistory = history.slice(-3);
+      const recentHistory = history.slice(-4); // 🔥 Mantém mais histórico
       
       const prompt = this.buildPrompt(userMessage, recentHistory, issue, userName);
       
-      console.log(`🧠 Gemini [${callSid}]: Processando "${userMessage.substring(0, 50)}..." | Histórico: ${recentHistory.length} mensagens`);
+      console.log(`🧠 Gemini [${callSid}]: Processando "${userMessage.substring(0, 80)}..." | Histórico: ${recentHistory.length} mensagens`);
       
       const result = await generativeModel.generateContent(prompt);
       const response = result.response;
@@ -416,9 +422,16 @@ Sua mensagem:`;
         throw new Error('Resposta muito curta do Gemini');
       }
       
-      this.updateConversationHistory(callSid, userMessage, text);
+      // 🔥 ATUALIZADO: Adiciona todas as mensagens ao histórico
+      if (Array.isArray(userMessages)) {
+        userMessages.forEach(msg => {
+          this.updateConversationHistory(callSid, msg, text);
+        });
+      } else {
+        this.updateConversationHistory(callSid, userMessage, text);
+      }
       
-      console.log(`🤖 Resposta Gemini [${callSid}]: "${text.substring(0, 50)}..."`);
+      console.log(`🤖 Resposta Gemini [${callSid}]: "${text.substring(0, 80)}..."`);
       
       return text;
       
@@ -439,17 +452,18 @@ Sua mensagem:`;
   buildPrompt(userMessage, history, issue, userName) {
     let prompt = `Você é um assistente em chamada telefônica. Responda em português brasileiro.
 
-PROBLEMA: ${issue}
+PROBLEMA INICIAL: ${issue}
 ${userName ? `NOME DO USUÁRIO: ${userName}` : ''}
 
 Regras:
 - 1-2 frases no máximo
-- Linguagem natural
-- Foco no problema acima
+- Linguagem natural de conversa
+- Foco no contexto da conversa
 - ${userName ? `Use o nome "${userName}" quando apropriado` : ''}
 - Nunca Use Emojis
+- Mantenha a conversa fluida
 
-Histórico:`;
+Histórico recente:`;
 
     if (history.length > 0) {
       history.forEach(([user, assistant]) => {
@@ -459,7 +473,7 @@ Histórico:`;
     }
 
     prompt += `\n\nUsuário: ${userMessage}`;
-    prompt += `\n\nSua resposta (curta, sobre "${issue}"):`;
+    prompt += `\n\nSua resposta (curta e natural, mantendo o fluxo):`;
 
     return prompt;
   }
@@ -515,14 +529,14 @@ const sttConfig = {
 };
 
 // =============================
-// 🎙️ Audio Stream Session (ATUALIZADO)
+// 🎙️ Audio Stream Session (ATUALIZADO PARA CONVERSA FLUIDA)
 // =============================
 class AudioStreamSession {
   constructor(ws, callSid, issue = null, userName = null) {
     this.ws = ws;
     this.callSid = callSid;
     this.issue = issue;
-    this.userName = userName; // 🔥 NOVO: Armazena nome do usuário
+    this.userName = userName;
     this.sttStream = null;
     this.isActive = false;
     this.lastFinalTranscript = "";
@@ -531,13 +545,17 @@ class AudioStreamSession {
     this.maxConsecutiveErrors = 3;
     this.healthCheckInterval = null;
     
-    // 🔥 NOVO: Controle de inatividade
+    // 🔥 ATUALIZADO: Buffer para mensagens sequenciais
+    this.messageBuffer = [];
+    this.bufferTimeout = null;
+    this.bufferDelay = 1200; // 1.2 segundos para agrupar mensagens
+    
+    // Controle de inatividade
     this.lastActivity = Date.now();
-    this.inactivityTimeout = 5 * 60 * 1000; // 5 minutos
+    this.inactivityTimeout = 5 * 60 * 1000;
     this.presenceCheckSent = false;
     
-    // 🔥 NOVO: Controle de interrupção
-    this.interruptionBuffer = [];
+    // 🔥 REMOVIDO: Sistema de interrupção complexo
     this.isInterrupting = false;
     
     console.log(`🎧 Nova sessão: ${callSid} | Issue: ${issue} | Nome: ${userName || 'Não informado'}`);
@@ -571,7 +589,6 @@ class AudioStreamSession {
     }
   }
 
-  // 🔥 ATUALIZADO: Health check com verificação de inatividade
   startHealthCheck() {
     this.healthCheckInterval = setInterval(() => {
       const now = Date.now();
@@ -589,10 +606,9 @@ class AudioStreamSession {
         console.log(`🚑 Health check: Muitos erros consecutivos [${this.callSid}], reiniciando STT...`);
         this.restartSTT();
       }
-    }, 10000); // Verifica a cada 10 segundos
+    }, 10000);
   }
 
-  // 🔥 NOVO: Envia verificação de presença
   async sendPresenceCheck() {
     try {
       const presenceMessage = await geminiService.generatePresenceCheck(this.callSid);
@@ -605,10 +621,9 @@ class AudioStreamSession {
     }
   }
 
-  // 🔥 NOVO: Reinicia contador de atividade
   updateActivity() {
     this.lastActivity = Date.now();
-    this.presenceCheckSent = false; // Reseta verificação de presença
+    this.presenceCheckSent = false;
     console.log(`🔄 Atividade atualizada [${this.callSid}] - ${new Date().toISOString()}`);
   }
 
@@ -625,6 +640,7 @@ class AudioStreamSession {
     this.setupSTT();
   }
 
+  // 🔥 ATUALIZADO COMPLETAMENTE: Sistema de buffer para mensagens sequenciais
   async handleSTTData(data) {
     try {
       if (data.results && data.results[0]) {
@@ -635,7 +651,7 @@ class AudioStreamSession {
         if (!transcript) return;
 
         this.consecutiveErrors = 0;
-        this.updateActivity(); // 🔥 ATUALIZADO: Atualiza atividade em qualquer transcrição
+        this.updateActivity();
 
         if (isFinal) {
           console.log(`📝 [FINAL] ${this.callSid}: "${transcript}"`);
@@ -643,17 +659,8 @@ class AudioStreamSession {
           if (transcript !== this.lastFinalTranscript && transcript.length > 2) {
             this.lastFinalTranscript = transcript;
             
-            // 🔥 NOVO: Se a IA estiver falando, interrompe e processa imediatamente
-            if (responseQueue.isSpeaking(this.callSid)) {
-              console.log(`🔄 Usuário interrompeu a fala [${this.callSid}], processando: "${transcript}"`);
-              responseQueue.interruptAndClear(this.callSid);
-              // Pequeno delay para garantir que a interrupção foi processada
-              setTimeout(() => {
-                this.processWithGemini(transcript);
-              }, 500);
-            } else {
-              await this.processWithGemini(transcript);
-            }
+            // 🔥 NOVO: Adiciona ao buffer e agenda processamento
+            this.addToBuffer(transcript);
           }
           
         } else {
@@ -669,46 +676,83 @@ class AudioStreamSession {
     }
   }
 
-  checkHealth() {
-    if (this.consecutiveErrors >= this.maxConsecutiveErrors) {
-      this.restartSTT();
+  // 🔥 NOVO: Sistema de buffer para agrupar mensagens sequenciais
+  addToBuffer(transcript) {
+    // Limpa timeout anterior
+    if (this.bufferTimeout) {
+      clearTimeout(this.bufferTimeout);
     }
+    
+    // Adiciona mensagem ao buffer
+    this.messageBuffer.push(transcript);
+    console.log(`📦 Buffer [${this.callSid}]: Adicionada "${transcript}" | Total: ${this.messageBuffer.length}`);
+    
+    // Agenda processamento do buffer
+    this.bufferTimeout = setTimeout(() => {
+      this.processBuffer();
+    }, this.bufferDelay);
   }
 
-  async processWithGemini(transcript) {
+  // 🔥 NOVO: Processa todas as mensagens do buffer de uma vez
+  async processBuffer() {
+    if (this.messageBuffer.length === 0) return;
+    
+    const messagesToProcess = [...this.messageBuffer];
+    this.messageBuffer = []; // Limpa o buffer
+    this.bufferTimeout = null;
+    
+    console.log(`🎯 Processando buffer [${this.callSid}]: ${messagesToProcess.length} mensagens`);
+    messagesToProcess.forEach((msg, i) => {
+      console.log(`   ${i + 1}. "${msg}"`);
+    });
+    
+    // Se a IA estiver falando, interrompe para processar as novas mensagens
+    if (responseQueue.isSpeaking(this.callSid)) {
+      console.log(`🔄 Interrompendo fala atual para processar ${messagesToProcess.length} mensagens [${this.callSid}]`);
+      responseQueue.interruptAndClear(this.callSid);
+      
+      // Pequeno delay para garantir interrupção
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    
+    // Processa todas as mensagens juntas
+    await this.processWithGemini(messagesToProcess);
+  }
+
+  // 🔥 ATUALIZADO: Aceita array de mensagens
+  async processWithGemini(messages) {
     if (this.geminiProcessing) {
-      console.log(`⏳ Gemini ocupado [${this.callSid}], adicionando à fila: "${transcript}"`);
-      // 🔥 NOVO: Se já está processando, adiciona à fila de interrupção
-      this.interruptionBuffer.push(transcript);
-      if (this.interruptionBuffer.length > 3) {
-        this.interruptionBuffer.shift(); // Mantém apenas os últimos 3
+      console.log(`⏳ Gemini ocupado [${this.callSid}], aguardando...`);
+      
+      // Aguarda até 5 segundos
+      let attempts = 0;
+      const maxAttempts = 5;
+      
+      while (this.geminiProcessing && attempts < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        attempts++;
+        console.log(`⏳ Tentativa ${attempts}/${maxAttempts} para [${this.callSid}]...`);
       }
-      return;
+      
+      if (this.geminiProcessing) {
+        console.log(`🚫 Gemini ainda ocupado após ${maxAttempts} tentativas [${this.callSid}], ignorando mensagens`);
+        return;
+      }
     }
 
     this.geminiProcessing = true;
 
     try {
-      console.log(`🧠 Processando com Gemini [${this.callSid}]: "${transcript}"`);
+      const messageText = Array.isArray(messages) ? messages : [messages];
+      console.log(`🧠 Processando ${messageText.length} mensagens com Gemini [${this.callSid}]`);
       
-      const geminiResponse = await geminiService.generateResponse(this.callSid, transcript);
+      const geminiResponse = await geminiService.generateResponse(this.callSid, messageText);
       
       if (geminiResponse && geminiResponse.length > 2) {
         responseQueue.addResponse(this.callSid, geminiResponse);
+        console.log(`✅ Resposta Gemini adicionada à fila [${this.callSid}]: "${geminiResponse.substring(0, 80)}..."`);
       } else {
         console.log(`⚠️ Resposta Gemini vazia para [${this.callSid}]`);
-      }
-      
-      // 🔥 NOVO: Processa interrupções pendentes
-      if (this.interruptionBuffer.length > 0) {
-        console.log(`🔄 Processando ${this.interruptionBuffer.length} interrupções pendentes para [${this.callSid}]`);
-        const nextInterruption = this.interruptionBuffer.shift();
-        if (nextInterruption) {
-          setTimeout(() => {
-            this.processWithGemini(nextInterruption);
-          }, 1000);
-          return; // Não marca como não processando ainda
-        }
       }
       
     } catch (error) {
@@ -718,6 +762,12 @@ class AudioStreamSession {
     } finally {
       this.geminiProcessing = false;
       console.log(`✅ Gemini liberado para [${this.callSid}]`);
+    }
+  }
+
+  checkHealth() {
+    if (this.consecutiveErrors >= this.maxConsecutiveErrors) {
+      this.restartSTT();
     }
   }
 
@@ -736,6 +786,12 @@ class AudioStreamSession {
 
   cleanup() {
     this.isActive = false;
+    
+    // Limpa buffer timeout
+    if (this.bufferTimeout) {
+      clearTimeout(this.bufferTimeout);
+      this.bufferTimeout = null;
+    }
     
     if (this.healthCheckInterval) {
       clearInterval(this.healthCheckInterval);
@@ -757,7 +813,7 @@ class AudioStreamSession {
 }
 
 // =============================
-// 🔄 WebSocket Server (ATUALIZADO)
+// 🔄 WebSocket Server
 // =============================
 const wss = new WebSocketServer({ 
   noServer: true,
@@ -766,11 +822,15 @@ const wss = new WebSocketServer({
 
 const activeSessions = new Map();
 const pendingIssues = new Map();
-const pendingUserNames = new Map(); // 🔥 NOVO: Armazena nomes pendentes
+const pendingUserNames = new Map();
+
+// 🔥 NOVO: Controle de sessões sendo limpas
+const cleaningSessions = new Set();
 
 wss.on("connection", (ws, req) => {
   console.log("🎧 Nova conexão WebSocket estabelecida");
   let session = null;
+  let callSid = null;
 
   const heartbeatInterval = setInterval(() => {
     if (ws.readyState === WebSocket.OPEN) {
@@ -786,9 +846,9 @@ wss.on("connection", (ws, req) => {
         case "start":
           console.log("🚀 Iniciando stream:", data.start.callSid);
           
-          const callSid = data.start.callSid;
+          callSid = data.start.callSid;
           const issue = pendingIssues.get(callSid);
-          const userName = pendingUserNames.get(callSid); // 🔥 NOVO: Obtém nome
+          const userName = pendingUserNames.get(callSid);
           
           if (activeSessions.has(callSid)) {
             session = activeSessions.get(callSid);
@@ -823,9 +883,24 @@ wss.on("connection", (ws, req) => {
 
         case "stop":
           console.log("🛑 Parando stream:", data.stop.callSid);
-          if (session) {
-            session.cleanup();
-            activeSessions.delete(data.stop.callSid);
+          const stopCallSid = data.stop.callSid;
+          
+          // Previne limpeza duplicada
+          if (!cleaningSessions.has(stopCallSid)) {
+            cleaningSessions.add(stopCallSid);
+            
+            if (activeSessions.has(stopCallSid)) {
+              const stopSession = activeSessions.get(stopCallSid);
+              stopSession.cleanup();
+              activeSessions.delete(stopCallSid);
+            }
+            
+            // Remove da lista de limpeza após um tempo
+            setTimeout(() => {
+              cleaningSessions.delete(stopCallSid);
+            }, 5000);
+          } else {
+            console.log(`⚠️ Sessão [${stopCallSid}] já está sendo limpa, ignorando...`);
           }
           break;
       }
@@ -835,12 +910,12 @@ wss.on("connection", (ws, req) => {
   });
 
   ws.on("close", () => {
-    console.log("🔌 WebSocket fechado");
+    console.log(`🔌 WebSocket fechado para [${callSid || 'sessão desconhecida'}]`);
     clearInterval(heartbeatInterval);
   });
 
   ws.on("error", (error) => {
-    console.error("❌ Erro WebSocket:", error);
+    console.error(`❌ Erro WebSocket [${callSid || 'sessão desconhecida'}]:`, error);
     clearInterval(heartbeatInterval);
   });
 
@@ -850,7 +925,7 @@ wss.on("connection", (ws, req) => {
 });
 
 // =============================
-// 📞 Endpoints Twilio (ATUALIZADO)
+// 📞 Endpoints Twilio
 // =============================
 app.post("/twiml", (req, res) => {
   try {
@@ -881,28 +956,21 @@ app.post("/twiml", (req, res) => {
 app.post("/make-call", async (req, res) => {
   let to = req.body.to;
   const issue = req.body.issue || "Preciso de ajuda com um problema";
-  const userName = req.body.userName; // 🔥 NOVO: Recebe nome do usuário
+  const userName = req.body.userName;
 
   if (!to) {
     return res.status(400).json({ error: "Número é obrigatório" });
   }
 
   try {
-    // 🔥 CORREÇÃO: Garantir que o número sempre tenha código 55
-    to = to.trim().replace(/\s/g, ""); // Remove espaços
+    to = to.trim().replace(/\s/g, "");
     
-    // Se não começar com +55, adiciona o código do Brasil
     if (!to.startsWith("+55")) {
-      // Se começar com + mas não for +55, substitui
       if (to.startsWith("+")) {
         to = "+55" + to.substring(1);
-      } 
-      // Se não tiver +, mas tiver 55 no início, adiciona o +
-      else if (to.startsWith("55")) {
+      } else if (to.startsWith("55")) {
         to = "+" + to;
-      }
-      // Se não tiver nada disso, adiciona +55
-      else {
+      } else {
         to = "+55" + to;
       }
     }
@@ -931,7 +999,7 @@ app.post("/make-call", async (req, res) => {
       issue: issue,
       userName: userName,
       numero_formatado: to,
-      features: ["STT", "Gemini AI", "Google TTS", "Voz natural", "Interrupções", "Verificação de presença"]
+      features: ["STT", "Gemini AI", "Google TTS", "Voz natural", "Conversa fluida", "Buffer de mensagens"]
     });
   } catch (error) {
     console.error("❌ Erro criando chamada:", error);
@@ -952,14 +1020,29 @@ app.post("/call-status", (req, res) => {
   const { CallSid, CallStatus } = req.body;
   console.log(`📞 Status [${CallStatus}]: ${CallSid}`);
   
-  if (['completed', 'failed', 'busy'].includes(CallStatus)) {
-    if (activeSessions.has(CallSid)) {
-      const session = activeSessions.get(CallSid);
-      session.cleanup();
-      activeSessions.delete(CallSid);
+  if (['completed', 'failed', 'busy', 'no-answer'].includes(CallStatus)) {
+    if (!cleaningSessions.has(CallSid)) {
+      cleaningSessions.add(CallSid);
+      
+      console.log(`🧹 Iniciando limpeza final para [${CallSid}]...`);
+      
+      if (activeSessions.has(CallSid)) {
+        const session = activeSessions.get(CallSid);
+        session.cleanup();
+        activeSessions.delete(CallSid);
+        console.log(`✅ Sessão ativa removida [${CallSid}]`);
+      }
+      
+      pendingIssues.delete(CallSid);
+      pendingUserNames.delete(CallSid);
+      
+      setTimeout(() => {
+        cleaningSessions.delete(CallSid);
+        console.log(`🗑️ Limpeza finalizada para [${CallSid}]`);
+      }, 3000);
+    } else {
+      console.log(`⚠️ Sessão [${CallSid}] já está sendo limpa, ignorando call-status...`);
     }
-    pendingIssues.delete(CallSid);
-    pendingUserNames.delete(CallSid);
   }
   
   res.status(200).send("OK");
@@ -972,11 +1055,10 @@ app.get("/health", (req, res) => {
     active_sessions: activeSessions.size,
     pending_issues: pendingIssues.size,
     pending_names: pendingUserNames.size,
-    features: ["STT", "Gemini AI", "Google TTS", "Voz natural premium", "Interrupções", "Verificação de presença"]
+    features: ["STT", "Gemini AI", "Google TTS", "Voz natural premium", "Conversa fluida", "Buffer de mensagens"]
   });
 });
 
-// 🔥 ATUALIZADO: Página inicial com campo para nome
 app.get("/", (req, res) => {
   res.send(`
     <html>
@@ -1049,9 +1131,9 @@ Preciso de ajuda para configurar meu email no celular
             <h3>Novas Funcionalidades</h3>
             <div class="feature">✅ Nome personalizado nas saudações</div>
             <div class="feature">✅ Verificação de presença após 5 minutos</div>
-            <div class="feature">✅ Interrupção quando usuário fala durante resposta</div>
+            <div class="feature">✅ Conversa fluida com buffer de mensagens</div>
+            <div class="feature">✅ Agrupamento de mensagens sequenciais</div>
             <div class="feature">✅ Logs detalhados para debug</div>
-            <div class="feature">✅ Sistema de recuperação de falhas</div>
           </div>
         </div>
       </body>
@@ -1069,8 +1151,8 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🔊 Google TTS: ${ttsConfig.voice.name}`);
   console.log(`📁 Áudios servidos em: ${baseUrl}/audio/`);
   console.log(`🔗 Health: http://localhost:${PORT}/health`);
-  console.log(`⏰ Verificação de presença: 5 minutos`);
-  console.log(`🔄 Interrupções: Ativadas`);
+  console.log(`🔄 Buffer de mensagens: ${1200}ms`);
+  console.log(`🎯 Conversa fluida: ATIVADA`);
 });
 
 server.on("upgrade", (req, socket, head) => {
