@@ -2,12 +2,29 @@ import express from "express";
 import twilio from "twilio";
 import WebSocket, { WebSocketServer } from "ws";
 import speech from "@google-cloud/speech";
-import { Buffer } from "buffer";
 import { VertexAI } from '@google-cloud/vertexai';
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+
+// =============================
+// 🔒 Validação de Variáveis de Ambiente
+// =============================
+const requiredEnvVars = [
+  'TWILIO_ACCOUNT_SID',
+  'TWILIO_AUTH_TOKEN', 
+  'TWILIO_PHONE_NUMBER',
+  'BASE_URL'
+];
+
+const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+if (missingVars.length > 0) {
+  console.error('❌ Variáveis de ambiente faltando:', missingVars);
+  process.exit(1);
+}
+
+console.log('✅ Todas as variáveis de ambiente necessárias estão presentes');
 
 const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 const clientSTT = new speech.SpeechClient();
@@ -32,8 +49,8 @@ const generativeModel = vertex_ai.getGenerativeModel({
 // =============================
 class ResponseQueue {
   constructor() {
-    this.queue = new Map(); // callSid -> { responses: [], isProcessing: false }
-    this.processingDelay = 2000; // 2 segundos entre respostas
+    this.queue = new Map();
+    this.processingDelay = 2000;
   }
 
   addResponse(callSid, responseText) {
@@ -50,7 +67,6 @@ class ResponseQueue {
 
     console.log(`📥 Fila [${callSid}]: ${responseText.substring(0, 50)}...`);
     
-    // Inicia processamento se não estiver processando
     if (!callQueue.isProcessing) {
       this.processQueue(callSid);
     }
@@ -69,10 +85,8 @@ class ResponseQueue {
     try {
       console.log(`🎯 Processando resposta para [${callSid}]: ${response.text}`);
       
-      // Atualiza o TwiML com a nova resposta
       await this.updateCallWithResponse(callSid, response.text);
       
-      // Agenda próximo processamento
       setTimeout(() => this.processQueue(callSid), this.processingDelay);
       
     } catch (error) {
@@ -83,14 +97,12 @@ class ResponseQueue {
 
   async updateCallWithResponse(callSid, responseText) {
     try {
-      // 🔥 Atualiza a chamada Twilio com novo TwiML
       const twiml = new twilio.twiml.VoiceResponse();
       twiml.say({ 
         voice: "alice", 
         language: "pt-BR" 
       }, responseText);
       
-      // 🔥 Mantém o stream aberto para continuar ouvindo
       const start = twiml.start();
       start.stream({ 
         url: `wss://${new URL(process.env.BASE_URL).host}/media-stream`,
@@ -104,7 +116,7 @@ class ResponseQueue {
           twiml: twiml.toString()
         });
 
-      console.log(`✅ Resposta enviada para chamada [${callSid}]: ${responseText.substring(0, 30)}...`);
+      console.log(`✅ Resposta enviada para [${callSid}]: ${responseText.substring(0, 30)}...`);
       
     } catch (error) {
       console.error(`❌ Erro atualizando chamada [${callSid}]:`, error);
@@ -118,7 +130,6 @@ class ResponseQueue {
   }
 }
 
-// Instância global da fila
 const responseQueue = new ResponseQueue();
 
 // =============================
@@ -126,14 +137,13 @@ const responseQueue = new ResponseQueue();
 // =============================
 class GeminiService {
   constructor() {
-    this.conversationHistory = new Map(); // callSid -> history
+    this.conversationHistory = new Map();
     this.maxHistoryLength = 10;
   }
 
   async generateResponse(callSid, userMessage) {
     try {
       const history = this.getConversationHistory(callSid);
-      
       const prompt = this.buildPrompt(userMessage, history);
       
       console.log(`🧠 Gemini prompt para [${callSid}]: ${userMessage.substring(0, 100)}...`);
@@ -142,7 +152,6 @@ class GeminiService {
       const response = result.response;
       const text = response.candidates[0].content.parts[0].text.replace(/\*/g, '').trim();
       
-      // Atualiza histórico
       this.updateConversationHistory(callSid, userMessage, text);
       
       console.log(`🤖 Gemini resposta para [${callSid}]: ${text.substring(0, 100)}...`);
@@ -193,7 +202,6 @@ Histórico recente:`;
     const history = this.getConversationHistory(callSid);
     history.push([userMessage, assistantResponse]);
     
-    // Mantém apenas o histórico recente
     if (history.length > this.maxHistoryLength) {
       history.shift();
     }
@@ -235,7 +243,6 @@ class AudioStreamSession {
     this.callSid = callSid;
     this.sttStream = null;
     this.isActive = false;
-    this.transcriptBuffer = [];
     this.lastFinalTranscript = "";
     this.geminiProcessing = false;
     
@@ -268,16 +275,12 @@ class AudioStreamSession {
         if (isFinal) {
           console.log(`📝 [FINAL] ${this.callSid}: ${transcript}`);
           
-          // 🔥 Evita processar a mesma transcrição múltiplas vezes
           if (transcript !== this.lastFinalTranscript) {
             this.lastFinalTranscript = transcript;
             await this.processWithGemini(transcript);
           }
           
-          this.sendToWebhook('final', { transcript });
-          
         } else {
-          // Interim results para debug
           if (transcript.length > 10) {
             console.log(`🎯 [INTERIM] ${this.callSid}: ${transcript}`);
           }
@@ -289,7 +292,6 @@ class AudioStreamSession {
   }
 
   async processWithGemini(transcript) {
-    // 🔥 Evita processamento concorrente para mesma chamada
     if (this.geminiProcessing) {
       console.log(`⏳ Gemini já processando [${this.callSid}], ignorando: ${transcript}`);
       return;
@@ -298,16 +300,11 @@ class AudioStreamSession {
     this.geminiProcessing = true;
 
     try {
-      // 🔥 Gera resposta com Gemini
       const geminiResponse = await geminiService.generateResponse(this.callSid, transcript);
-      
-      // 🔥 Adiciona à fila para ser falada
       responseQueue.addResponse(this.callSid, geminiResponse);
       
     } catch (error) {
       console.error(`❌ Erro processamento Gemini [${this.callSid}]:`, error);
-      
-      // Resposta de fallback
       responseQueue.addResponse(this.callSid, "Desculpe, não entendi. Pode repetir?");
       
     } finally {
@@ -326,24 +323,6 @@ class AudioStreamSession {
     }
   }
 
-  sendToWebhook(type, data) {
-    const webhookUrl = `${process.env.BASE_URL}/transcription-webhook`;
-    const payload = {
-      callSid: this.callSid,
-      type: type,
-      timestamp: new Date().toISOString(),
-      ...data
-    };
-
-    fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    }).catch(error => {
-      console.error(`❌ Erro webhook [${this.callSid}]:`, error);
-    });
-  }
-
   cleanup() {
     this.isActive = false;
     
@@ -352,7 +331,6 @@ class AudioStreamSession {
       this.sttStream = null;
     }
 
-    // Limpeza de recursos
     geminiService.cleanup(this.callSid);
     responseQueue.cleanup(this.callSid);
     
@@ -416,13 +394,34 @@ wss.on("connection", (ws, req) => {
 });
 
 // =============================
+// 🏁 Health Checks (CRÍTICO para Cloud Run)
+// =============================
+app.get("/", (req, res) => {
+  res.json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    service: 'Twilio Gemini Voice Assistant',
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
+app.get("/health", (req, res) => {
+  res.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    port: process.env.PORT,
+    node_version: process.version,
+    active_sessions: activeSessions.size
+  });
+});
+
+// =============================
 // 📞 Endpoints Twilio
 // =============================
 app.post("/twiml", (req, res) => {
   try {
     const response = new twilio.twiml.VoiceResponse();
 
-    // Mensagem de boas-vindas inicial
     response.say({ 
       voice: "alice", 
       language: "pt-BR" 
@@ -434,7 +433,7 @@ app.post("/twiml", (req, res) => {
       track: "inbound_track"
     });
 
-    response.pause({ length: 300 }); // 5 minutos
+    response.pause({ length: 300 });
 
     res.type("text/xml");
     res.send(response.toString());
@@ -475,7 +474,7 @@ app.post("/make-call", async (req, res) => {
 });
 
 // =============================
-// 🌐 Webhooks e Monitoramento
+// 🌐 Webhooks
 // =============================
 app.post("/transcription-webhook", (req, res) => {
   const { callSid, type, transcript } = req.body;
@@ -498,59 +497,17 @@ app.post("/call-status", (req, res) => {
   res.status(200).send("OK");
 });
 
-app.get("/health", (req, res) => {
-  res.json({
-    status: "healthy",
-    timestamp: new Date().toISOString(),
-    active_sessions: activeSessions.size,
-    features: ["STT", "Gemini AI", "Real-time Responses"]
-  });
-});
-
-app.get("/", (req, res) => {
-  res.send(`
-    <html>
-      <head>
-        <title>Twilio + Gemini AI</title>
-        <style>
-          body { font-family: Arial, sans-serif; margin: 40px; }
-          .container { max-width: 800px; margin: 0 auto; }
-          .card { background: #f5f5f5; padding: 20px; margin: 20px 0; border-radius: 10px; }
-          button { background: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <h1>🤖 Twilio + Gemini AI Assistant</h1>
-          
-          <div class="card">
-            <h3>Fazer Chamada Inteligente</h3>
-            <form action="/make-call" method="POST">
-              <input type="tel" name="to" placeholder="+5521988392219" value="+5521988392219" required>
-              <button type="submit">📞 Chamar com IA</button>
-            </form>
-            <p><small>O Gemini irá responder em tempo real suas mensagens</small></p>
-          </div>
-          
-          <div class="card">
-            <h3>Status do Sistema</h3>
-            <p>Sessões ativas: <strong>${activeSessions.size}</strong></p>
-            <a href="/health">Ver Health Check</a>
-          </div>
-        </div>
-      </body>
-    </html>
-  `);
-});
-
 // =============================
-// 🚀 Servidor
+// 🚀 Servidor (CORRIGIDO para Cloud Run)
 // =============================
-const PORT = process.env.PORT || 8080;
-const server = app.listen(PORT, () => {
-  console.log(`🚀 Servidor com Gemini iniciado na porta ${PORT}`);
+const PORT = parseInt(process.env.PORT) || 8080;
+const HOST = '0.0.0.0'; // 🔥 CRÍTICO para Cloud Run
+
+const server = app.listen(PORT, HOST, () => {
+  console.log(`🚀 Servidor iniciado em http://${HOST}:${PORT}`);
+  console.log(`✅ Health check: http://${HOST}:${PORT}/health`);
   console.log(`🤖 Gemini Model: ${model}`);
-  console.log(`🔗 Health: http://localhost:${PORT}/health`);
+  console.log(`📞 Twilio Number: ${process.env.TWILIO_PHONE_NUMBER}`);
 });
 
 server.on("upgrade", (req, socket, head) => {
@@ -564,8 +521,11 @@ server.on("upgrade", (req, socket, head) => {
 });
 
 process.on("SIGTERM", () => {
-  console.log("🔻 Encerrando servidor...");
+  console.log("🔻 Recebido SIGTERM, encerrando servidor...");
   activeSessions.forEach(session => session.cleanup());
   activeSessions.clear();
-  server.close(() => process.exit(0));
+  server.close(() => {
+    console.log("✅ Servidor encerrado");
+    process.exit(0);
+  });
 });
