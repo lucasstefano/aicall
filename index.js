@@ -11,7 +11,7 @@ const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-// 🔥 Servir arquivos de áudio estáticos
+// Servir arquivos de áudio estáticos
 app.use('/audio', express.static('audio'));
 
 const accountSid = process.env.TWILIO_ACCOUNT_SID;
@@ -296,7 +296,7 @@ const responseQueue = new ResponseQueue();
 responseQueue.startAudioCleanupSchedule();
 
 // =============================
-// 🧠 Gemini Service com Prompts Dinâmicos
+// 🧠 Gemini Service com Prompts de Segurança
 // =============================
 class GeminiService {
   constructor() {
@@ -304,169 +304,190 @@ class GeminiService {
     this.userData = new Map();
     this.maxHistoryLength = 6;
     
-    // 🔥 SISTEMA DE PROMPTS DINÂMICOS
-    this.problemPrompts = {
-      'email': {
-        system: `Você é um especialista em configuração de e-mail. 
-PROBLEMA: Configurar e-mail no celular
-NOME DA PESSOA: {nome}
+    // 🔥 SISTEMA DE PROMPTS PARA INCIDENTES DE SEGURANÇA
+    this.securityPrompts = {
+      'phishing': {
+        system: `Você é um especialista em segurança cibernética respondendo a um incidente de PHISHING.
+DADOS DO INCIDENTE:
+- Tipo: Ataque de Phishing
+- Severidade: ALTA
+- Usuário/Serviço: {user_service}
+- Host Origem: {host_origin}
+- IP Remoto: {remote_ip}
+- URLs: {urls}
 
 Instruções específicas:
-- Foque em problemas de configuração de e-mail (Gmail, Outlook, etc.)
-- Ajude com servidores de entrada/saída (IMAP, SMTP)
-- Oriente sobre senhas de aplicativo e autenticação
-- Explique de forma simples e passo a passo
+- Foque em contenção imediata do phishing
+- Oriente sobre reset de senhas e verificação de contas
+- Alerte sobre links maliciosos e anexos suspeitos
+- Explique procedimentos de reporte ao time de segurança
 - Mantenha 1-2 frases por resposta
-- Use o nome da pessoa naturalmente
-- Seja prático e direto ao ponto`,
-        welcome: `Crie uma mensagem de boas-vindas para {nome} sobre configuração de e-mail no celular.
-Seja prático e ofereça ajuda imediata com servidores e senhas.
-Apenas UMA frase curta e direta.`
+- Use tom urgente mas profissional
+- Ofereça passos claros de ação`,
+        welcome: `Crie uma mensagem urgente sobre incidente de PHISHING para {nome}.
+Destaque a gravidade e a necessidade de ação imediata.
+Inclua referência aos dados: {user_service}, {remote_ip}`
       },
       
-      'internet': {
-        system: `Você é um técnico especialista em problemas de internet.
-PROBLEMA: Problemas de conexão na internet  
-NOME DA PESSOA: {nome}
+      'malware': {
+        system: `Você é um especialista em resposta a incidentes de MALWARE.
+DADOS DO INCIDENTE:
+- Tipo: Infecção por Malware
+- Severidade: CRÍTICA  
+- Host Origem: {host_origin}
+- IP Remoto: {remote_ip}
+- Porta/Protocolo: {port_protocol}
+- Volumes: {volumes}
 
 Instruções específicas:
-- Ajude com troubleshooting de conexão WiFi e dados móveis
-- Sugira verificação de senha, reset de modem, configuração DNS
-- Oriente sobre testes de velocidade e verificação de provedor
-- Use linguagem técnica mas acessível
-- Mantenha 1-2 frases por resposta
-- Foque em soluções práticas e imediatas`,
-        welcome: `Crie uma mensagem de boas-vindas para {nome} sobre problemas de conexão na internet.
-Mostre-se preparado para diagnosticar e resolver o problema rapidamente.
-Apenas UMA frase curta.`
+- Priorize isolamento do sistema infectado
+- Oriente sobre scan de antivírus e remoção
+- Alerte sobre possível exfiltração de dados
+- Explique procedimentos de quarentena
+- Mantenha tom de extrema urgência
+- Foque em contenção e mitigação`,
+        welcome: `Crie uma mensagem crítica sobre infecção por MALWARE para {nome}.
+Enfatize a necessidade de isolamento imediato do sistema.
+Mencione: {host_origin}, {remote_ip}`
       },
       
-      'conta': {
-        system: `Você é um especialista em atualização de cadastro.
-PROBLEMA: Atualizar cadastro da conta
-NOME DA PESSOA: {nome}
+      'ddos': {
+        system: `Você é um especialista em mitigação de ataques DDoS.
+DADOS DO INCIDENTE:
+- Tipo: Ataque DDoS
+- Severidade: ALTA
+- IP Remoto: {remote_ip} 
+- Porta/Protocolo: {port_protocol}
+- Volumes: {volumes}
+- Serviço: {user_service}
 
 Instruções específicas:
-- Auxilie com atualização de dados pessoais, endereço, telefone
-- Oriente sobre verificação de documentos e confirmação de identidade
-- Explique prazos e confirmações de atualização
-- Foque em segurança e verificação de dados
-- Mantenha 1-2 frases por resposta
-- Seja claro sobre os procedimentos necessários`,
-        welcome: `Crie uma mensagem de boas-vindas para {nome} sobre atualização de cadastro.
-Destaque a importância de manter os dados atualizados e a segurança.
-Apenas UMA frase curta.`
+- Foque em mitigação do tráfego malicioso
+- Oriente sobre ativação de proteções DDoS
+- Explique mudanças temporárias de roteamento
+- Mantenha calma mas aja rapidamente
+- Priorize disponibilidade do serviço`,
+        welcome: `Crie uma mensagem sobre ataque DDoS em andamento para {nome}.
+Destaque a mitigação em progresso e impacto no serviço.
+Refira-se a: {remote_ip}, {volumes}`
       },
       
-      'fatura': {
-        system: `Você é um especialista financeiro.
-PROBLEMA: Fatura com valor incorreto
-NOME DA PESSOA: {nome}
+      'access': {
+        system: `Você é um especialista em controle de acesso e identidade.
+DADOS DO INCIDENTE:
+- Tipo: Acesso Não Autorizado
+- Severidade: MÉDIA-ALTA
+- Usuário/Serviço: {user_service}
+- Host Origem: {host_origin}
+- IP Remoto: {remote_ip}
+- Evidências: {evidence}
 
 Instruções específicas:
-- Ajude a analisar cobranças e disputar valores incorretos
-- Oriente sobre verificação de uso, tarifas e impostos
-- Explique prazos para contestação e documentos necessários
-- Mantenha tom profissional mas empático com o problema
-- Mantenha 1-2 frases por resposta
-- Ofereça orientações claras sobre próximos passos`,
-        welcome: `Crie uma mensagem de boas-vindas para {nome} sobre problemas na fatura.
-Mostre compreensão e disposição para resolver a questão.
-Apenas UMA frase curta.`
+- Foque em revogação de acessos comprometidos
+- Oriente sobre reset de credenciais
+- Explique verificação de logs de acesso
+- Alerte sobre possíveis privilégios elevados
+- Mantenha foco em contenção de acesso`,
+        welcome: `Crie uma mensagem sobre acesso não autorizado detectado para {nome}.
+Aborde a revogação de acessos e investigação em curso.
+Dados: {user_service}, {host_origin}`
       },
       
-      'suporte': {
-        system: `Você é um técnico de suporte urgente.
-PROBLEMA: Suporte técnico urgente
-NOME DA PESSOA: {nome}
+      'data': {
+        system: `Você é um especialista em proteção de dados e privacidade.
+DADOS DO INCIDENTE:
+- Tipo: Vazamento de Dados
+- Severidade: CRÍTICA
+- Volumes: {volumes}
+- Endpoints: {urls}
+- Evidências: {evidence}
+- Observação: {critical_note}
 
 Instruções específicas:
-- Priorize resolução rápida e eficiente
-- Identifique a criticidade do problema rapidamente
-- Ofereça soluções imediatas e escalonamento se necessário
-- Mantenha calma e profissionalismo mesmo em situações urgentes
-- Mantenha 1-2 frases por resposta
-- Foque em acalmar o usuário e resolver o problema`,
-        welcome: `Crie uma mensagem de boas-vindas urgente para {nome}.
-Transmita confiança e rapidez no atendimento.
-Apenas UMA frase curta.`
+- Priorize contenção do vazamento
+- Oriente sobre notificação legal se aplicável
+- Explique procedimentos de preservação de evidências
+- Mantenha tom de extrema seriedade
+- Foque em minimizar impacto e conformidade`,
+        welcome: `Crie uma mensagem crítica sobre vazamento de dados para {nome}.
+Enfatize a gravidade e ações imediatas de contenção.
+Refira-se a: {volumes}, {critical_note}`
       },
       
       'default': {
-        system: `Você é um assistente de chamada telefônica em português brasileiro.
-PROBLEMA: {issue}
-NOME DA PESSOA: {nome}
+        system: `Você é um especialista em segurança cibernética.
+DADOS DO INCIDENTE:
+- Tipo: {attack_type}
+- Severidade: {severity}
+- Usuário/Serviço: {user_service}
+- Host Origem: {host_origin}
+- IP Remoto: {remote_ip}
 
 Instruções:
-- Responda com 1 a 2 frases curtas, claras e naturais.
-- Mantenha o foco no problema mencionado.
-- Use o nome da pessoa sempre que fizer sentido.
-- Adote um tom amigável, profissional e humano.`,
-        welcome: `Crie uma mensagem de boas-vindas em português brasileiro para {nome} sobre: {issue}
-Apenas UMA frase curta, cordial e que transmita confiança.`
+- Responda com 1-2 frases focadas em ação imediata
+- Mantenha tom profissional e urgente
+- Ofereça orientações claras de contenção
+- Adapte-se à severidade do incidente`,
+        welcome: `Crie uma mensagem de alerta de segurança para {nome} sobre: {attack_type}
+Baseie-se na severidade {severity} e dados fornecidos.`
       }
     };
   }
 
-  // 🔥 IDENTIFICAR TIPO DE PROBLEMA
-  identifyProblemType(issue) {
-    const issueLower = issue.toLowerCase();
-    
-    if (issueLower.includes('email') || issueLower.includes('e-mail')) return 'email';
-    if (issueLower.includes('internet') || issueLower.includes('conexão') || issueLower.includes('wifi')) return 'internet';
-    if (issueLower.includes('conta') || issueLower.includes('cadastro') || issueLower.includes('atualizar')) return 'conta';
-    if (issueLower.includes('fatura') || issueLower.includes('cobrança') || issueLower.includes('valor')) return 'fatura';
-    if (issueLower.includes('suporte') || issueLower.includes('técnico') || issueLower.includes('urgente')) return 'suporte';
-    
-    return 'default';
-  }
-
-  async generateWelcomeMessage(callSid, issue, nome) {
+  // 🔥 GERAR MENSAGEM COM DADOS COMPLETOS DE SEGURANÇA
+  async generateWelcomeMessage(callSid, securityData) {
     try {
-      const problemType = this.identifyProblemType(issue);
-      const promptConfig = this.problemPrompts[problemType] || this.problemPrompts.default;
+      const { nome, attack_type, severity, user_service, host_origin, remote_ip, port_protocol, volumes, urls, evidence, critical_note } = securityData;
       
-      this.userData.set(callSid, { 
-        issue: issue,
-        nome: nome,
-        problemType: problemType
-      });
+      const promptConfig = this.securityPrompts[attack_type] || this.securityPrompts.default;
+      
+      // Salvar dados completos para uso nas respostas
+      this.userData.set(callSid, securityData);
       
       const prompt = promptConfig.welcome
         .replace(/{nome}/g, nome)
-        .replace(/{issue}/g, issue);
+        .replace(/{attack_type}/g, attack_type)
+        .replace(/{severity}/g, severity)
+        .replace(/{user_service}/g, user_service)
+        .replace(/{host_origin}/g, host_origin)
+        .replace(/{remote_ip}/g, remote_ip)
+        .replace(/{port_protocol}/g, port_protocol)
+        .replace(/{volumes}/g, volumes)
+        .replace(/{urls}/g, urls)
+        .replace(/{evidence}/g, evidence)
+        .replace(/{critical_note}/g, critical_note);
 
-      console.log(`🎯 Gerando mensagem [${problemType}] para: ${nome} - ${issue}`);
+      console.log(`🎯 Gerando mensagem [${attack_type}-${severity}] para: ${nome}`);
       
       const result = await generativeModel.generateContent(prompt);
       const response = result.response;
       const welcomeMessage = response.candidates[0].content.parts[0].text.replace(/\*/g, '').trim();
       
-      console.log(`🤖 Mensagem de boas-vindas [${problemType}] para ${nome}: ${welcomeMessage}`);
+      console.log(`🤖 Mensagem de segurança [${attack_type}]: ${welcomeMessage}`);
       
       return welcomeMessage;
       
     } catch (error) {
-      console.error(`❌ Erro gerando mensagem de boas-vindas [${callSid}]:`, error);
-      return `Olá ${nome}! Como posso te ajudar hoje?`;
+      console.error(`❌ Erro gerando mensagem de segurança [${callSid}]:`, error);
+      return `Alerta de segurança para ${securityData.nome}! Incidente ${securityData.attack_type} detectado. Ação imediata necessária.`;
     }
   }
 
   async generateResponse(callSid, userMessage) {
     try {
       const history = this.getConversationHistory(callSid);
-      const userData = this.userData.get(callSid);
+      const securityData = this.userData.get(callSid);
       
-      if (!userData) {
-        throw new Error('Dados do usuário não encontrados');
+      if (!securityData) {
+        throw new Error('Dados de segurança não encontrados');
       }
       
-      const { issue, nome, problemType } = userData;
+      const { nome, attack_type, severity, user_service, host_origin, remote_ip, port_protocol, volumes, urls, evidence, critical_note } = securityData;
       const recentHistory = history.slice(-3);
       
-      const prompt = this.buildProblemSpecificPrompt(userMessage, recentHistory, issue, nome, problemType);
+      const prompt = this.buildSecurityPrompt(userMessage, recentHistory, securityData);
       
-      console.log(`🧠 Gemini [${callSid} - ${nome} - ${problemType}]: "${userMessage.substring(0, 50)}..."`);
+      console.log(`🧠 Gemini [${callSid} - ${attack_type} - ${severity}]: "${userMessage.substring(0, 50)}..."`);
       
       const result = await generativeModel.generateContent(prompt);
       const response = result.response;
@@ -483,7 +504,7 @@ Apenas UMA frase curta, cordial e que transmita confiança.`
       
       this.updateConversationHistory(callSid, userMessage, text);
       
-      console.log(`🤖 Resposta [${callSid} - ${problemType}]: "${text.substring(0, 50)}..."`);
+      console.log(`🤖 Resposta [${callSid} - ${attack_type}]: "${text.substring(0, 50)}..."`);
       
       return text;
       
@@ -491,23 +512,34 @@ Apenas UMA frase curta, cordial e que transmita confiança.`
       console.error(`❌ Erro Gemini [${callSid}]:`, error);
       
       const fallbacks = [
-        "Pode repetir? Não entendi direito.",
-        "Desculpe, não captei o que você disse. Pode falar novamente?",
-        "Não consegui processar sua mensagem. Pode tentar de outra forma?",
-        "Hmm, não entendi. Pode explicar de outra maneira?"
+        "Repita por favor, não entendi a instrução.",
+        "Confirmando os procedimentos de segurança. Pode detalhar?",
+        "Não capturei completamente. Pode reformular o comando?",
+        "Verificando protocolo de resposta. Pode repetir a orientação?"
       ];
       
       return fallbacks[Math.floor(Math.random() * fallbacks.length)];
     }
   }
 
-  // 🔥 CONSTRUIR PROMPT ESPECÍFICO
-  buildProblemSpecificPrompt(userMessage, history, issue, nome, problemType) {
-    const promptConfig = this.problemPrompts[problemType] || this.problemPrompts.default;
+  // 🔥 CONSTRUIR PROMPT COM DADOS COMPLETOS DE SEGURANÇA
+  buildSecurityPrompt(userMessage, history, securityData) {
+    const { nome, attack_type, severity, user_service, host_origin, remote_ip, port_protocol, volumes, urls, evidence, critical_note } = securityData;
+    
+    const promptConfig = this.securityPrompts[attack_type] || this.securityPrompts.default;
     
     let prompt = promptConfig.system
       .replace(/{nome}/g, nome)
-      .replace(/{issue}/g, issue);
+      .replace(/{attack_type}/g, attack_type)
+      .replace(/{severity}/g, severity)
+      .replace(/{user_service}/g, user_service)
+      .replace(/{host_origin}/g, host_origin)
+      .replace(/{remote_ip}/g, remote_ip)
+      .replace(/{port_protocol}/g, port_protocol)
+      .replace(/{volumes}/g, volumes)
+      .replace(/{urls}/g, urls)
+      .replace(/{evidence}/g, evidence)
+      .replace(/{critical_note}/g, critical_note);
 
     if (history.length > 0) {
       history.forEach(([user, assistant]) => {
@@ -517,7 +549,7 @@ Apenas UMA frase curta, cordial e que transmita confiança.`
     }
 
     prompt += `\n\nUsuário: ${userMessage}`;
-    prompt += `\n\nSua resposta (curta, focada no problema, para ${nome}):`;
+    prompt += `\n\nSua resposta (curta, focada em segurança, para ${nome}):`;
 
     return prompt;
   }
@@ -543,7 +575,7 @@ Apenas UMA frase curta, cordial e que transmita confiança.`
   cleanup(callSid) {
     this.conversationHistory.delete(callSid);
     this.userData.delete(callSid);
-    console.log(`🧹 Histórico limpo para [${callSid}]`);
+    console.log(`🧹 Histórico de segurança limpo para [${callSid}]`);
   }
 }
 
@@ -562,10 +594,11 @@ const sttConfig = {
     useEnhanced: true,
     speechContexts: [{
       phrases: [
-        "configurar", "e-mail", "email", "celular", "problema", "conexão",
-        "internet", "conta", "fatura", "suporte", "técnico", "urgente"
+        "phishing", "malware", "ddos", "ataque", "segurança", "incidente",
+        "firewall", "antivírus", "quarentena", "isolamento", "mitigação",
+        "acesso", "credenciais", "senha", "vazamento", "dados", "criptografia"
       ],
-      boost: 5.0
+      boost: 10.0
     }]
   },
   interimResults: true,
@@ -579,11 +612,10 @@ const sttConfig = {
 // 🎙️ Audio Stream Session
 // =============================
 class AudioStreamSession {
-  constructor(ws, callSid, issue = null, nome = null) {
+  constructor(ws, callSid, securityData = null) {
     this.ws = ws;
     this.callSid = callSid;
-    this.issue = issue;
-    this.nome = nome;
+    this.securityData = securityData;
     this.sttStream = null;
     this.isActive = false;
     this.lastFinalTranscript = "";
@@ -594,7 +626,7 @@ class AudioStreamSession {
     this.inactivityTimeout = null;
     this.lastActivityTime = Date.now();
     
-    console.log(`🎧 Nova sessão: ${callSid}, Nome: ${nome}, Issue: ${issue}`);
+    console.log(`🎧 Nova sessão de segurança: ${callSid}, Nome: ${securityData?.nome}, Tipo: ${securityData?.attack_type}`);
     this.setupSTT();
     this.startHealthCheck();
     this.resetInactivityTimer();
@@ -691,7 +723,7 @@ class AudioStreamSession {
         this.resetInactivityTimer();
 
         if (isFinal) {
-          console.log(`📝 [FINAL] ${this.callSid} (${this.nome}): ${transcript}`);
+          console.log(`📝 [FINAL] ${this.callSid} (${this.securityData?.nome}): ${transcript}`);
           
           if (transcript !== this.lastFinalTranscript && transcript.length > 2) {
             this.lastFinalTranscript = transcript;
@@ -700,7 +732,7 @@ class AudioStreamSession {
           
         } else {
           if (transcript.length > 8) {
-            console.log(`🎯 [INTERIM] ${this.callSid} (${this.nome}): ${transcript}`);
+            console.log(`🎯 [INTERIM] ${this.callSid} (${this.securityData?.nome}): ${transcript}`);
           }
         }
       }
@@ -771,7 +803,7 @@ class AudioStreamSession {
     geminiService.cleanup(this.callSid);
     responseQueue.cleanup(this.callSid);
     
-    console.log(`🔚 Sessão finalizada [${this.callSid} - ${this.nome}]`);
+    console.log(`🔚 Sessão de segurança finalizada [${this.callSid} - ${this.securityData?.nome}]`);
   }
 }
 
@@ -784,10 +816,10 @@ const wss = new WebSocketServer({
 });
 
 const activeSessions = new Map();
-const pendingIssues = new Map();
+const pendingSecurityData = new Map();
 
 wss.on("connection", (ws, req) => {
-  console.log("🎧 Nova conexão WebSocket");
+  console.log("🎧 Nova conexão WebSocket de segurança");
   let session = null;
   let isAlive = true;
 
@@ -808,10 +840,10 @@ wss.on("connection", (ws, req) => {
       
       switch (data.event) {
         case "start":
-          console.log("🚀 Iniciando stream:", data.start.callSid);
+          console.log("🚀 Iniciando stream de segurança:", data.start.callSid);
           
           const callSid = data.start.callSid;
-          const userData = pendingIssues.get(callSid);
+          const securityData = pendingSecurityData.get(callSid);
           
           if (activeSessions.has(callSid)) {
             session = activeSessions.get(callSid);
@@ -823,22 +855,22 @@ wss.on("connection", (ws, req) => {
               session.setupSTT();
             }
           } else {
-            session = new AudioStreamSession(ws, callSid, userData?.issue, userData?.nome);
+            session = new AudioStreamSession(ws, callSid, securityData);
             activeSessions.set(callSid, session);
             
-            if (userData) {
-              geminiService.generateWelcomeMessage(callSid, userData.issue, userData.nome)
+            if (securityData) {
+              geminiService.generateWelcomeMessage(callSid, securityData)
                 .then(welcomeMessage => {
                   responseQueue.addResponse(callSid, welcomeMessage);
                 })
                 .catch(error => {
                   console.error(`❌ Erro welcome message [${callSid}]:`, error);
-                  responseQueue.addResponse(callSid, `Olá ${userData.nome}! Como posso te ajudar?`);
+                  responseQueue.addResponse(callSid, `Alerta de segurança para ${securityData.nome}! Incidente ${securityData.attack_type} detectado.`);
                 });
             }
           }
           
-          pendingIssues.delete(callSid);
+          pendingSecurityData.delete(callSid);
           break;
 
         case "media":
@@ -902,7 +934,7 @@ app.post("/twiml", (req, res) => {
     response.say({ 
       voice: "alice", 
       language: "pt-BR" 
-    }, "Olá!");
+    }, "Alerta de Segurança!");
 
     const start = response.start();
     start.stream({ 
@@ -915,7 +947,7 @@ app.post("/twiml", (req, res) => {
     res.type("text/xml");
     res.send(response.toString());
     
-    console.log("📞 TwiML gerado com pause de 5 minutos");
+    console.log("📞 TwiML de segurança gerado");
     
   } catch (error) {
     console.error("❌ Erro gerando TwiML:", error);
@@ -923,10 +955,85 @@ app.post("/twiml", (req, res) => {
   }
 });
 
+// 🔥 DADOS PRÉ-DEFINIDOS PARA CADA TIPO DE ATAQUE
+const SECURITY_INCIDENTS = {
+  'phishing': {
+    attack_type: 'phishing',
+    severity: 'ALTA',
+    user_service: 'usuário@empresa.com',
+    host_origin: 'WORKSTATION-045',
+    remote_ip: '192.168.1.45',
+    port_protocol: '443/HTTPS',
+    volumes: '2.3 MB transferidos',
+    urls: 'phishing-scam.com/login, malicious-page.net/verify',
+    evidence: 'E-mail de phishing detectado, credenciais capturadas',
+    critical_note: 'Credenciais corporativas potencialmente comprometidas'
+  },
+  'malware': {
+    attack_type: 'malware',
+    severity: 'CRÍTICA',
+    user_service: 'SERVIDOR-FILE01',
+    host_origin: 'SRV-FILE-01',
+    remote_ip: '10.20.30.45',
+    port_protocol: '8080/TCP',
+    volumes: '150 MB exfiltrados',
+    urls: 'C&C: malware-command.com/beacon',
+    evidence: 'Processo suspeito svchost-mal.exe, conexões anômalas',
+    critical_note: 'Possível ransomware em fase inicial'
+  },
+  'ddos': {
+    attack_type: 'ddos',
+    severity: 'ALTA',
+    user_service: 'WEBSERVER-PROD',
+    host_origin: 'LB-PROD-01',
+    remote_ip: '203.0.113.1-203.0.113.254',
+    port_protocol: '80/HTTP, 443/HTTPS',
+    volumes: '15 Gbps, 2M pps',
+    urls: 'api.empresa.com/v1, www.empresa.com',
+    evidence: 'Padrão de tráfego SYN flood identificado',
+    critical_note: 'Serviços web com latência elevada'
+  },
+  'access': {
+    attack_type: 'access',
+    severity: 'MÉDIA-ALTA',
+    user_service: 'admin@empresa.com',
+    host_origin: 'AD-SERVER-01',
+    remote_ip: '198.51.100.23',
+    port_protocol: '3389/RDP',
+    volumes: 'Vários logs de acesso falho',
+    urls: 'vpn.empresa.com, remote.empresa.com',
+    evidence: 'Tentativas de brute force no serviço RDP',
+    critical_note: 'Possível tentativa de acesso privilegiado'
+  },
+  'data': {
+    attack_type: 'data',
+    severity: 'CRÍTICA',
+    user_service: 'DB-PROD-01',
+    host_origin: 'DATABASE-SRV',
+    remote_ip: '172.16.1.100',
+    port_protocol: '1433/TCP',
+    volumes: '650 MB de dados sensíveis',
+    urls: 'N/A (transferência direta)',
+    evidence: 'Consulta massiva a tabelas de clientes e PII',
+    critical_note: 'Dados pessoais identificáveis potencialmente expostos'
+  }
+};
+
+// 🔥 FUNÇÃO PARA OBTER DATA/HORA ATUAL
+function getCurrentDateTime() {
+  const now = new Date();
+  now.setHours(now.getHours() - 3); // UTC-3
+  return {
+    date: now.toISOString().split('T')[0],
+    time: now.toTimeString().split(' ')[0],
+    timestamp: now.toISOString()
+  };
+}
+
 app.post("/make-call", async (req, res) => {
   let to = req.body.to;
-  const issue = req.body.issue || "Preciso de ajuda com um problema";
   const nome = req.body.nome || "";
+  const incidentType = req.body.incident_type || 'phishing';
 
   if (!to || !nome) {
     return res.status(400).json({ 
@@ -947,7 +1054,7 @@ app.post("/make-call", async (req, res) => {
       }
     }
 
-    console.log(`📞 Chamada para: ${nome} (${to})`);
+    console.log(`📞 Chamada de segurança para: ${nome} (${to}) - ${incidentType}`);
 
     const call = await client.calls.create({
       to: to,
@@ -958,26 +1065,35 @@ app.post("/make-call", async (req, res) => {
       statusCallbackEvent: ["answered", "completed"],
     });
 
-    console.log(`✅ Chamada com Gemini + Google TTS iniciada: ${call.sid}`);
-    console.log(`👤 Nome do destinatário: ${nome}`);
-    console.log(`🎯 Issue: ${issue}`);
+    // 🔥 MONTAR DADOS COMPLETOS DE SEGURANÇA
+    const datetime = getCurrentDateTime();
+    const baseIncident = SECURITY_INCIDENTS[incidentType];
     
-    pendingIssues.set(call.sid, { 
-      issue: issue, 
-      nome: nome 
-    });
+    const securityData = {
+      nome: nome,
+      ...datetime,
+      ...baseIncident
+    };
+
+    console.log(`✅ Chamada de segurança iniciada: ${call.sid}`);
+    console.log(`👤 Responsável: ${nome}`);
+    console.log(`🎯 Incidente: ${incidentType} - ${baseIncident.severity}`);
+    console.log(`📊 Dados: ${baseIncident.user_service} → ${baseIncident.remote_ip}`);
+    
+    pendingSecurityData.set(call.sid, securityData);
     
     res.json({ 
-      message: "Chamada com IA e voz natural iniciada", 
+      message: "Chamada de segurança iniciada", 
       sid: call.sid,
       nome: nome,
-      issue: issue,
+      incident_type: incidentType,
+      severity: baseIncident.severity,
       numero_formatado: to,
-      problemType: geminiService.identifyProblemType(issue),
-      features: ["STT", "Gemini AI", "Google TTS", "Voz natural", "Personalização por nome", "Prompts dinâmicos"]
+      datetime: datetime,
+      features: ["STT", "Gemini AI", "Google TTS", "Resposta a incidentes", "Dados de segurança completos"]
     });
   } catch (error) {
-    console.error("❌ Erro criando chamada:", error);
+    console.error("❌ Erro criando chamada de segurança:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -985,12 +1101,6 @@ app.post("/make-call", async (req, res) => {
 // =============================
 // 🌐 Webhooks e Monitoramento
 // =============================
-app.post("/transcription-webhook", (req, res) => {
-  const { callSid, type, transcript } = req.body;
-  console.log(`📨 Webhook [${type}]: ${callSid} - "${transcript}"`);
-  res.status(200).json({ received: true });
-});
-
 app.post("/call-status", (req, res) => {
   const { CallSid, CallStatus } = req.body;
   console.log(`📞 Status [${CallStatus}]: ${CallSid}`);
@@ -1001,7 +1111,7 @@ app.post("/call-status", (req, res) => {
       session.cleanup();
       activeSessions.delete(CallSid);
     }
-    pendingIssues.delete(CallSid);
+    pendingSecurityData.delete(CallSid);
   }
   
   res.status(200).send("OK");
@@ -1009,11 +1119,11 @@ app.post("/call-status", (req, res) => {
 
 app.get("/health", (req, res) => {
   res.json({
-    status: "healthy",
+    status: "secure",
     timestamp: new Date().toISOString(),
     active_sessions: activeSessions.size,
-    pending_issues: pendingIssues.size,
-    features: ["STT", "Gemini AI", "Google TTS", "Voz natural premium", "Personalização por nome", "Prompts dinâmicos por problema"]
+    pending_incidents: pendingSecurityData.size,
+    features: ["STT", "Gemini AI", "Google TTS", "Resposta a incidentes", "Dados completos de segurança"]
   });
 });
 
@@ -1047,10 +1157,10 @@ app.post("/cancel-call", async (req, res) => {
       activeSessions.delete(callSid);
     }
     
-    pendingIssues.delete(callSid);
+    pendingSecurityData.delete(callSid);
     
     res.json({ 
-      message: "Chamada cancelada com sucesso",
+      message: "Chamada de segurança cancelada",
       callSid: callSid
     });
   } catch (error) {
@@ -1060,95 +1170,165 @@ app.post("/cancel-call", async (req, res) => {
 });
 
 // =============================
-// 🎯 Página HTML com Seleção de Problemas
+// 🎯 Página HTML com Incidentes de Segurança
 // =============================
 app.get("/", (req, res) => {
   res.send(`
     <html>
       <head>
-        <title>SafeCall AI - Prompts Dinâmicos</title>
+        <title>SafeCall AI - Central de Segurança</title>
         <style>
-          body { font-family: Arial, sans-serif; margin: 40px; background: #f0f2f5; }
-          .container { max-width: 900px; margin: 0 auto; }
-          .card { background: white; padding: 25px; margin: 20px 0; border-radius: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-          button { background: #007bff; color: white; padding: 12px 25px; border: none; border-radius: 8px; cursor: pointer; font-size: 16px; transition: 0.3s; }
-          button:hover { background: #0056b3; transform: translateY(-2px); }
-          input, textarea { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 8px; font-size: 16px; box-sizing: border-box; }
-          .feature { background: #e8f4fd; padding: 12px; margin: 8px 0; border-radius: 8px; border-left: 4px solid #007bff; }
-          .issues-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0; }
-          .issue-card { 
-            background: #fff; 
-            border: 2px solid #e0e0e0; 
+          body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 20px; background: #0f1a2b; color: #e0e0e0; }
+          .container { max-width: 1200px; margin: 0 auto; }
+          .card { background: #1a2a3f; padding: 25px; margin: 20px 0; border-radius: 15px; border: 1px solid #2a3a4f; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+          button { background: #007bff; color: white; padding: 15px 30px; border: none; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: 600; transition: 0.3s; width: 100%; }
+          button:hover { background: #0056b3; transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,123,255,0.4); }
+          input { width: 100%; padding: 15px; margin: 10px 0; border: 1px solid #2a3a4f; border-radius: 8px; font-size: 16px; box-sizing: border-box; background: #2a3a4f; color: white; }
+          .incidents-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin: 25px 0; }
+          .incident-card { 
+            background: linear-gradient(135deg, #1a2a3f, #2a3a4f);
+            border: 2px solid; 
             border-radius: 12px; 
-            padding: 20px; 
-            text-align: center; 
+            padding: 25px; 
             cursor: pointer; 
             transition: 0.3s; 
             font-weight: 500;
+            text-align: center;
           }
-          .issue-card:hover { 
-            background: #007bff; 
-            color: white; 
-            border-color: #007bff;
-            transform: translateY(-3px);
-            box-shadow: 0 4px 15px rgba(0,123,255,0.3);
+          .incident-card:hover { 
+            transform: translateY(-5px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.4);
           }
-          .issue-card.selected {
-            background: #007bff;
-            color: white;
-            border-color: #007bff;
+          .incident-card.phishing { border-color: #ff6b6b; }
+          .incident-card.malware { border-color: #ffa726; }
+          .incident-card.ddos { border-color: #4fc3f7; }
+          .incident-card.access { border-color: #ba68c8; }
+          .incident-card.data { border-color: #4db6ac; }
+          
+          .incident-card.selected { 
+            background: linear-gradient(135deg, #2a3a4f, #3a4a5f);
+            box-shadow: 0 0 30px rgba(255,255,255,0.1);
           }
+          
+          .severity { 
+            display: inline-block; 
+            padding: 6px 15px; 
+            border-radius: 20px; 
+            font-size: 12px; 
+            font-weight: bold;
+            margin: 10px 0;
+            text-transform: uppercase;
+          }
+          .severity-high { background: #dc3545; color: white; }
+          .severity-critical { background: #fd7e14; color: white; }
+          .severity-medium { background: #ffc107; color: black; }
+          
+          .incident-icon { font-size: 2.5em; margin-bottom: 15px; }
+          .incident-details { font-size: 12px; text-align: left; margin-top: 15px; opacity: 0.8; }
+          .incident-details div { margin: 5px 0; }
+          
+          h1 { color: #ffffff; text-align: center; margin-bottom: 10px; font-size: 2.5em; }
+          h2 { color: #4fc3f7; text-align: center; margin-bottom: 30px; font-weight: 300; }
+          h3 { color: #ffffff; margin-bottom: 20px; border-bottom: 2px solid #2a3a4f; padding-bottom: 10px; }
+          
           .status-badge { 
             display: inline-block; 
-            padding: 4px 12px; 
+            padding: 8px 16px; 
             border-radius: 20px; 
             font-size: 14px; 
             margin: 5px; 
+            font-weight: 600;
           }
-          .status-active { background: #d4edda; color: #155724; }
-          .status-pending { background: #fff3cd; color: #856404; }
-          h1 { color: #333; text-align: center; margin-bottom: 30px; }
-          h3 { color: #444; margin-bottom: 20px; }
-          .problem-type { 
-            background: #17a2b8; 
-            color: white; 
-            padding: 4px 8px; 
-            border-radius: 4px; 
-            font-size: 12px; 
-            margin-left: 10px; 
+          .status-active { background: #155724; color: #d4edda; border: 1px solid #28a745; }
+          .status-pending { background: #856404; color: #fff3cd; border: 1px solid #ffc107; }
+          
+          .form-group { margin: 20px 0; }
+          label { display: block; margin-bottom: 8px; color: #a0a0a0; font-weight: 600; }
+          
+          @media (max-width: 768px) {
+            .incidents-grid { grid-template-columns: 1fr; }
+            .container { padding: 10px; }
           }
         </style>
         <script>
-          let selectedProblemType = 'default';
+          let selectedIncident = 'phishing';
           
-          function selectIssue(text, type) {
-            const textarea = document.querySelector('textarea[name="issue"]');
-            const cards = document.querySelectorAll('.issue-card');
+          function selectIncident(type, name) {
+            const cards = document.querySelectorAll('.incident-card');
             
             // Remover seleção anterior
             cards.forEach(card => card.classList.remove('selected'));
             
             // Adicionar seleção atual
-            event.target.classList.add('selected');
+            event.target.closest('.incident-card').classList.add('selected');
             
-            textarea.value = text;
-            selectedProblemType = type;
+            selectedIncident = type;
             
-            // Atualizar display do tipo de problema
-            updateProblemTypeDisplay(type);
+            // Atualizar display
+            updateIncidentDisplay(type, name);
           }
           
-          function updateProblemTypeDisplay(type) {
-            const typeDisplay = document.getElementById('problemTypeDisplay');
-            const typeNames = {
-              'email': '📱 E-mail',
-              'internet': '🌐 Internet', 
-              'conta': '🧾 Conta',
-              'fatura': '💰 Fatura',
-              'suporte': '🛠️ Suporte',
-              'default': '🔧 Geral'
+          function updateIncidentDisplay(type, name) {
+            const display = document.getElementById('selectedIncident');
+            display.innerHTML = \`Incidente Selecionado: <strong>\${name}</strong> <span class="severity severity-\${getSeverityClass(type)}">\${getSeverityText(type)}</span>\`;
+          }
+          
+          function getSeverityClass(type) {
+            const severityMap = {
+              'phishing': 'high',
+              'malware': 'critical', 
+              'ddos': 'high',
+              'access': 'medium',
+              'data': 'critical'
             };
-            typeDisplay.innerHTML = \`Tipo: <span class="problem-type">\${typeNames[type]}</span>\`;
+            return severityMap[type];
+          }
+          
+          function getSeverityText(type) {
+            const textMap = {
+              'phishing': 'ALTA',
+              'malware': 'CRÍTICA',
+              'ddos': 'ALTA',
+              'access': 'MÉDIA-ALTA',
+              'data': 'CRÍTICA'
+            };
+            return textMap[type];
+          }
+          
+          function makeCall() {
+            const nome = document.getElementById('nome').value;
+            const telefone = document.getElementById('telefone').value;
+            
+            if (!nome || !telefone) {
+              alert('Nome e telefone são obrigatórios!');
+              return;
+            }
+            
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/make-call';
+            
+            const nomeInput = document.createElement('input');
+            nomeInput.type = 'hidden';
+            nomeInput.name = 'nome';
+            nomeInput.value = nome;
+            
+            const telInput = document.createElement('input');
+            telInput.type = 'hidden';
+            telInput.name = 'to';
+            telInput.value = telefone;
+            
+            const incidentInput = document.createElement('input');
+            incidentInput.type = 'hidden';
+            incidentInput.name = 'incident_type';
+            incidentInput.value = selectedIncident;
+            
+            form.appendChild(nomeInput);
+            form.appendChild(telInput);
+            form.appendChild(incidentInput);
+            
+            document.body.appendChild(form);
+            form.submit();
           }
           
           function updateStatus() {
@@ -1156,102 +1336,146 @@ app.get("/", (req, res) => {
               .then(r => r.json())
               .then(data => {
                 document.getElementById('activeSessions').textContent = data.active_sessions;
-                document.getElementById('pendingIssues').textContent = data.pending_issues;
+                document.getElementById('pendingIncidents').textContent = data.pending_incidents;
               });
           }
           
           // Atualizar status a cada 5 segundos
           setInterval(updateStatus, 5000);
           updateStatus();
+          
+          // Selecionar phishing por padrão
+          document.addEventListener('DOMContentLoaded', function() {
+            selectIncident('phishing', 'Ataque de Phishing');
+          });
         </script>
       </head>
       <body>
         <div class="container">
-          <h1>SafeCall AI - Prompts Dinâmicos</h1>
+          <h1>🚨 SafeCall AI</h1>
+          <h2>Central de Resposta a Incidentes de Segurança</h2>
           
           <div class="card">
-            <h3>🎯 Fazer Chamada de Voz Inteligente</h3>
-            <form action="/make-call" method="POST">
-              <input type="text" name="nome" placeholder="Nome da pessoa" value="Daniel" required>
-              
-              <input type="tel" name="to" placeholder="Número de telefone" value="21994442087" required>
-
-              <h4>Selecione o tipo de problema:</h4>
-              <div class="issues-grid">
-                <div class="issue-card" onclick="selectIssue('Preciso de ajuda para configurar meu e-mail no celular', 'email')">
-                  📱 Configurar e-mail
-                  <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">Servidores, senhas, autenticação</div>
-                </div>
-                <div class="issue-card" onclick="selectIssue('Estou com problemas de conexão na internet', 'internet')">
-                  🌐 Problemas de internet
-                  <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">WiFi, modem, velocidade</div>
-                </div>
-                <div class="issue-card" onclick="selectIssue('Quero atualizar o cadastro da minha conta', 'conta')">
-                  🧾 Atualizar cadastro
-                  <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">Dados, documentos, segurança</div>
-                </div>
-                <div class="issue-card" onclick="selectIssue('Minha fatura veio com valor incorreto', 'fatura')">
-                  💰 Fatura incorreta
-                  <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">Cobranças, contestação</div>
-                </div>
-                <div class="issue-card" onclick="selectIssue('Preciso de suporte técnico urgente', 'suporte')">
-                  🛠️ Suporte técnico
-                  <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">Urgente, crítico</div>
+            <h3>🔍 Selecionar Tipo de Incidente</h3>
+            <div class="incidents-grid">
+              <div class="incident-card phishing" onclick="selectIncident('phishing', 'Ataque de Phishing')">
+                <div class="incident-icon">📧</div>
+                <h4>Phishing Detectado</h4>
+                <div class="severity severity-high">ALTA SEVERIDADE</div>
+                <div class="incident-details">
+                  <div>📅 Data: ${getCurrentDateTime().date}</div>
+                  <div>⏰ Hora: ${getCurrentDateTime().time} UTC-3</div>
+                  <div>👤 Usuário: usuario@empresa.com</div>
+                  <div>🌐 Host: WORKSTATION-045</div>
+                  <div>📍 IP: 192.168.1.45</div>
+                  <div>⚠️ Risco: Credenciais comprometidas</div>
                 </div>
               </div>
-
-              <div id="problemTypeDisplay" style="margin: 10px 0; font-weight: bold;">Tipo: <span class="problem-type">🔧 Geral</span></div>
-
-              <textarea name="issue" placeholder="Descreva o problema ou use os botões acima..." rows="3" required>
-Preciso de ajuda para configurar meu email no celular
-              </textarea>
-              <button type="submit">🎯 Fazer Ligação Inteligente</button>
-            </form>
+              
+              <div class="incident-card malware" onclick="selectIncident('malware', 'Infecção por Malware')">
+                <div class="incident-icon">🦠</div>
+                <h4>Infecção por Malware</h4>
+                <div class="severity severity-critical">CRÍTICA</div>
+                <div class="incident-details">
+                  <div>📅 Data: ${getCurrentDateTime().date}</div>
+                  <div>⏰ Hora: ${getCurrentDateTime().time} UTC-3</div>
+                  <div>🖥️ Servidor: SRV-FILE-01</div>
+                  <div>📍 IP: 10.20.30.45</div>
+                  <div>📊 Dados: 150 MB exfiltrados</div>
+                  <div>🚨 Alerta: Possível ransomware</div>
+                </div>
+              </div>
+              
+              <div class="incident-card ddos" onclick="selectIncident('ddos', 'Ataque DDoS')">
+                <div class="incident-icon">🌊</div>
+                <h4>Ataque DDoS</h4>
+                <div class="severity severity-high">ALTA SEVERIDADE</div>
+                <div class="incident-details">
+                  <div>📅 Data: ${getCurrentDateTime().date}</div>
+                  <div>⏰ Hora: ${getCurrentDateTime().time} UTC-3</div>
+                  <div>🌐 Serviço: WEBSERVER-PROD</div>
+                  <div>📡 IPs: 203.0.113.1-254</div>
+                  <div>💥 Tráfego: 15 Gbps</div>
+                  <div>⚠️ Impacto: Serviços com latência</div>
+                </div>
+              </div>
+              
+              <div class="incident-card access" onclick="selectIncident('access', 'Acesso Não Autorizado')">
+                <div class="incident-icon">🔐</div>
+                <h4>Acesso Não Autorizado</h4>
+                <div class="severity severity-medium">MÉDIA-ALTA</div>
+                <div class="incident-details">
+                  <div>📅 Data: ${getCurrentDateTime().date}</div>
+                  <div>⏰ Hora: ${getCurrentDateTime().time} UTC-3</div>
+                  <div>👤 Conta: admin@empresa.com</div>
+                  <div>🖥️ Servidor: AD-SERVER-01</div>
+                  <div>📍 IP: 198.51.100.23</div>
+                  <div>🚨 Tentativa: Brute force RDP</div>
+                </div>
+              </div>
+              
+              <div class="incident-card data" onclick="selectIncident('data', 'Vazamento de Dados')">
+                <div class="incident-icon">💾</div>
+                <h4>Vazamento de Dados</h4>
+                <div class="severity severity-critical">CRÍTICA</div>
+                <div class="incident-details">
+                  <div>📅 Data: ${getCurrentDateTime().date}</div>
+                  <div>⏰ Hora: ${getCurrentDateTime().time} UTC-3</div>
+                  <div>🗄️ Banco: DB-PROD-01</div>
+                  <div>📍 IP: 172.16.1.100</div>
+                  <div>📊 Volume: 650 MB sensíveis</div>
+                  <div>🚨 Dados: PII expostos</div>
+                </div>
+              </div>
+            </div>
+            
+            <div id="selectedIncident" style="text-align: center; margin: 20px 0; font-size: 1.2em; padding: 15px; background: #2a3a4f; border-radius: 8px;">
+              Selecione um incidente acima
+            </div>
+          </div>
+          
+          <div class="card">
+            <h3>📞 Iniciar Chamada de Emergência</h3>
+            <div class="form-group">
+              <label for="nome">👤 Nome do Responsável:</label>
+              <input type="text" id="nome" placeholder="Digite seu nome completo" value="Daniel Silva" required>
+            </div>
+            
+            <div class="form-group">
+              <label for="telefone">📱 Número de Telefone:</label>
+              <input type="tel" id="telefone" placeholder="21994442087" value="21994442087" required>
+            </div>
+            
+            <button onclick="makeCall()">🚨 INICIAR CHAMADA DE EMERGÊNCIA</button>
           </div>
           
           <div class="card">
             <h3>📊 Status do Sistema</h3>
-            <div class="feature">
-              Sessões ativas: <strong id="activeSessions">0</strong>
-              <span class="status-badge status-active">STT + Gemini</span>
-            </div>
-            <div class="feature">
-              Issues pendentes: <strong id="pendingIssues">0</strong>
-              <span class="status-badge status-pending">Aguardando</span>
-            </div>
-            <a href="/health" style="color: #007bff; text-decoration: none;">🔍 Ver Health Check Detalhado</a>
-          </div>
-
-          <div class="card">
-            <h3>🚫 Cancelar Chamada</h3>
-            <form action="/cancel-call" method="POST">
-              <input type="text" name="callSid" placeholder="Call SID da chamada" required>
-              <button type="submit" style="background: #dc3545;">⛔ Cancelar Chamada</button>
-            </form>
-          </div>
-
-          <div class="card">
-            <h3>🎯 Sistema de Prompts Dinâmicos</h3>
-            <div class="feature">
-              <strong>📱 E-mail:</strong> Configuração, servidores IMAP/SMTP, senhas de aplicativo
-            </div>
-            <div class="feature">
-              <strong>🌐 Internet:</strong> Troubleshooting, reset de modem, velocidade, DNS
-            </div>
-            <div class="feature">
-              <strong>🧾 Conta:</strong> Atualização de dados, documentos, segurança
-            </div>
-            <div class="feature">
-              <strong>💰 Fatura:</strong> Análise de cobranças, contestação, documentos
-            </div>
-            <div class="feature">
-              <strong>🛠️ Suporte:</strong> Urgência, criticidade, escalonamento
-            </div>
-            <div class="feature">
-              <strong>🔧 Geral:</strong> Prompt padrão para outros problemas
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+              <div style="text-align: center; padding: 20px; background: #2a3a4f; border-radius: 8px;">
+                <div style="font-size: 2em; font-weight: bold; color: #28a745;" id="activeSessions">0</div>
+                <div>Chamadas Ativas</div>
+                <div class="status-badge status-active">STT + Gemini</div>
+              </div>
+              <div style="text-align: center; padding: 20px; background: #2a3a4f; border-radius: 8px;">
+                <div style="font-size: 2em; font-weight: bold; color: #ffc107;" id="pendingIncidents">0</div>
+                <div>Incidentes Pendentes</div>
+                <div class="status-badge status-pending">Monitorando</div>
+              </div>
             </div>
           </div>
         </div>
+        
+        <script>
+          function getCurrentDateTime() {
+            const now = new Date();
+            now.setHours(now.getHours() - 3);
+            return {
+              date: now.toISOString().split('T')[0],
+              time: now.toTimeString().split(' ')[0]
+            };
+          }
+        </script>
       </body>
     </html>
   `);
@@ -1262,13 +1486,13 @@ Preciso de ajuda para configurar meu email no celular
 // =============================
 const PORT = process.env.PORT || 8080;
 const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Servidor com Gemini + Google TTS iniciado na porta ${PORT}`);
+  console.log(`🚀 Central de Segurança iniciada na porta ${PORT}`);
   console.log(`🤖 Gemini Model: ${model}`);
   console.log(`🔊 Google TTS: ${ttsConfig.voice.name}`);
   console.log(`📁 Áudios servidos em: ${baseUrl}/audio/`);
   console.log(`🔗 Health: http://localhost:${PORT}/health`);
-  console.log(`🎯 Sistema: Prompts dinâmicos ATIVADO`);
-  console.log(`📊 Tipos de problemas: email, internet, conta, fatura, suporte`);
+  console.log(`🎯 Sistema: Resposta a incidentes ATIVADA`);
+  console.log(`🚨 Tipos de incidentes: phishing, malware, ddos, access, data`);
 });
 
 server.on("upgrade", (req, socket, head) => {
@@ -1282,9 +1506,9 @@ server.on("upgrade", (req, socket, head) => {
 });
 
 process.on("SIGTERM", () => {
-  console.log("🔻 Encerrando servidor...");
+  console.log("🔻 Encerrando central de segurança...");
   activeSessions.forEach(session => session.cleanup());
   activeSessions.clear();
-  pendingIssues.clear();
+  pendingSecurityData.clear();
   server.close(() => process.exit(0));
 });
