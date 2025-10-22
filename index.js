@@ -327,18 +327,16 @@ class GeminiService {
         nome: nome 
       });
       
-      const prompt = `Crie uma MENSAGEM DE BOAS-VINDAS inicial em português brasileiro.
+      const prompt = `Crie uma mensagem de boas-vindas em português brasileiro para iniciar uma conversa sobre: ${issue}
+        Nome da pessoa: ${nome}
 
-Contexto: ${issue}
-Nome da pessoa: ${nome}
+        Regras:
+        - Apenas UMA frase curta
+        - Seja cordial e transmita confiança.
+        - Mencione o nome da pessoa diretamente.
+        - Use linguagem natural e profissional, sem soar robótica.
 
-Regras:
-- Apenas UMA frase curta
-- Seja amigável e use o nome da pessoa
-- Linguagem natural
-- Menção direta ao nome
-
-Sua mensagem:`;
+        Sua mensagem:`;
 
       console.log(`🎯 Gerando mensagem de boas-vindas para: ${nome} - ${issue}`);
       
@@ -406,18 +404,17 @@ Sua mensagem:`;
   }
 
   buildPrompt(userMessage, history, issue, nome) { // 🔥 ADICIONAR nome
-    let prompt = `Você é um assistente em chamada telefônica. Responda em português brasileiro.
+    let prompt = `Você é um assistente de chamada telefônica em português brasileiro.
 
 PROBLEMA: ${issue}
 NOME DA PESSOA: ${nome}
 
-Regras:
-- 1-2 frases no máximo
-- Linguagem natural
-- Foco no problema acima
-- Use o nome da pessoa quando apropriado
-
-Histórico:`;
+Instruções:
+- Responda com 1 a 2 frases curtas, claras e naturais.
+- Mantenha o foco no problema mencionado.
+- Use o nome da pessoa sempre que fizer sentido.
+- Adote um tom amigável, profissional e humano, como se estivesse falando diretamente com o usuário.
+`;
 
     if (history.length > 0) {
       history.forEach(([user, assistant]) => {
@@ -1012,7 +1009,7 @@ app.get("/", (req, res) => {
             <h3>Fazer Chamada de Voz</h3>
             <form action="/make-call" method="POST">
               <!-- 🔥 ADICIONAR CAMPO NOME -->
-              <input type="text" name="nome" placeholder="Nome da pessoa" value="João Silva" required>
+              <input type="text" name="nome" placeholder="Nome da pessoa" value="Daniel" required>
               
               <input type="tel" name="to" placeholder="21994442087" value="21994442087" required>
 
