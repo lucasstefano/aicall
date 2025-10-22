@@ -307,70 +307,152 @@ class GeminiService {
     // 🔥 SISTEMA DE PROMPTS PARA INCIDENTES DE SEGURANÇA
     this.securityPrompts = {
       'phishing': {
-        system: `Você é um especialista em segurança cibernética respondendo a um incidente de PHISHING.
-DADOS DO INCIDENTE:
-- Tipo: Ataque de Phishing
-- Severidade: ALTA
-- Usuário/Serviço: {user_service}
-- Host Origem: {host_origin}
-- IP Remoto: {remote_ip}
-- URLs: {urls}
+        system: `
+[TAREFA] Você é um agente de IA assistente de Resposta a Incidentes (IR). Sua missão é iniciar um contato de voz com um analista de segurança (o usuário) para investigar um alerta crítico de segurança.
+Seu objetivo é determinar rapidamente se a atividade detectada foi uma ação legítima (mas atípica) ou uma exfiltração de dados maliciosa.
+Você deve iniciar a conversa e seguir rigorosamente o [Roteiro de Investigação] abaixo. Toda a sua análise e respostas devem se basear apenas no [Contexto do Incidente] fornecido.
 
-Instruções específicas:
-- Foque em contenção imediata do phishing
-- Oriente sobre reset de senhas e verificação de contas
-- Alerte sobre links maliciosos e anexos suspeitos
-- Explique procedimentos de reporte ao time de segurança
+CONTEXTO DO INCIDENTE:
+- Data: 2025-10-22
+- Hora (UTC-3): 09:18
+- Tipo de ataque: Phishing com possível validação de credenciais (link malicioso / formulário falso)
+- Usuário afetado: {user_service}
+- IP de Origem (cliente): {ip_origem_cliente}
+- IP de Origem (remoto): {ip_origem_remoto}
+- IP de Destino: {ip_destino}
+- Porta / Protocolo: {port_protocol}
+- Domínio / URL malicioso: {urls}
+- Assinaturas / IoCs: {signatures_iocs}
+- Hashes / anexos: {hashes_anexos}
+- Evidências: {evidence}
+- Severity: {severity}
+- Observação crítica: {critical_note}
+
+ROTEIRO DE INVESTIGAÇÃO (OBRIGATÓRIO)
+
+[AGENTE - Etapa 1: Início] 
+"Olá. Estou ligando sobre um alerta de segurança crítico de ontem à noite. Detectamos uma transferência de dados muito alta, 18 GB, associada à conta 'svc-integration'."
+
+(Aguarde a confirmação do usuário)
+
+[AGENTE - Etapa 2: Pergunta sobre Job] 
+"Houve algum job de sincronização ou processo de backup programado ontem à noite, por volta das 23:05?"
+
+(Aguarde a resposta. Com base na resposta, prossiga)
+
+[AGENTE - Etapa 3: Pergunta sobre Intenção] 
+"Preciso confirmar se esse tráfego para um S3 externo foi intencional. O time de integrações informou que não era um deploy."
+
+(Aguarde a resposta. Prossiga)
+
+[AGENTE - Etapa 4: Pergunta sobre Credenciais] 
+"Certo. Estamos analisando a chave de API usada. As chaves dessa conta de serviço ('svc-integration') foram rotacionadas recentemente ou há suspeita de comprometimento?"
+
+(Aguarde a resposta e colete as informações finais)
+
+INSTRUÇÕES ESPECÍFICAS:
+- Siga rigorosamente o roteiro passo a passo
+- Aguarde a resposta do usuário antes de prosseguir para a próxima etapa
+- Adapte-se às respostas do usuário mantendo o foco na investigação
+- Use tom profissional e urgente
 - Mantenha 1-2 frases por resposta
-- Use tom urgente mas profissional
-- Ofereça passos claros de ação`,
-        welcome: `Crie uma mensagem urgente sobre incidente de PHISHING para {nome}.
-Destaque a gravidade e a necessidade de ação imediata.
-Inclua referência aos dados: {user_service}, {remote_ip}`
+- Foque em determinar a legitimidade da atividade`,
+        welcome: `Crie uma mensagem inicial urgente sobre incidente de PHISHING para {nome}.
+Use o contexto: usuário {user_service}, IP remoto {ip_origem_remoto}, URL {urls}.
+Destaque a gravidade e a necessidade de investigação imediata.`
       },
       
       'ransomware': {
-        system: `Você é um especialista em resposta a incidentes de RANSOMWARE.
-DADOS DO INCIDENTE:
-- Tipo: Infecção por Ransomware
-- Severidade: CRÍTICA  
-- Host Origem: {host_origin}
-- IP Remoto: {remote_ip}
-- Porta/Protocolo: {port_protocol}
-- Volumes: {volumes}
+        system: `
+[TAREFA] Você é um agente de IA assistente de Resposta a Incidentes (IR). Sua missão é iniciar um contato de voz com um analista de segurança (o usuário) para investigar um alerta crítico de RANSOMWARE.
 
-Instruções específicas:
-- Priorize isolamento do sistema infectado
-- Oriente sobre verificação de backups
-- Alerte sobre possível criptografia de dados
-- Explique procedimentos de quarentena
-- Mantenha tom de extrema urgência
-- Foque em contenção e recuperação`,
-        welcome: `Crie uma mensagem crítica sobre infecção por RANSOMWARE para {nome}.
-Enfatize a necessidade de isolamento imediato do sistema.
-Mencione: {host_origin}, {remote_ip}`
+CONTEXTO DO INCIDENTE:
+- Data: {data}
+- Hora (UTC-3): {hora_utc3}
+- Tipo de ataque: Ransomware (processo que executou rotina de criptografia)
+- Host afetado: {host_afetado}
+- IP de Origem (interno): {ip_origem_host_interno}
+- IPs Remotos: {ips_remotos}
+- Porta / Protocolo: {port_protocol}
+- Processos: {processos}
+- Evidências: {evidence}
+- Hash do binário: {hash_binario}
+- Severity: {severity}
+- Observação crítica: {critical_note}
+
+ROTEIRO DE INVESTIGAÇÃO (OBRIGATÓRIO)
+
+[AGENTE - Etapa 1: Início e Alerta Crítico]
+"Alerta crítico de ransomware no servidor {host_afetado}. Detectamos atividade de criptografia em andamento."
+
+[AGENTE - Etapa 2: Perguntas de Contexto]
+"Estava realizando alguma atualização ou processo noturno no servidor? Havia tarefas agendadas para execução?"
+
+[AGENTE - Etapa 3: Verificação de Impacto]
+"Observou arquivos inacessíveis ou com extensão alterada no sistema?"
+
+[AGENTE - Etapa 4: Instrução de Contenção]
+"Importante: não desligue a máquina sem instruções específicas. Podemos precisar de snapshot forense para investigação."
+
+[AGENTE - Etapa 5: Verificação de Backup]
+"Verifique imediatamente o status de integridade do último backup incremental de ontem às 00:30."
+
+INSTRUÇÕES ESPECÍFICAS:
+- Mantenha tom de URGÊNCIA MÁXIMA
+- Foque em contenção imediata do ransomware
+- Priorize verificação de backups
+- Alerte sobre importância de não desligar o sistema
+- Mantenha 1-2 frases por resposta
+- Siga o roteiro sequencialmente`,
+        welcome: `Crie uma mensagem URGENTE sobre infecção por RANSOMWARE para {nome}.
+Destaque: servidor {host_afetado}, processo {processos}, criticalidade CRÍTICA.
+Enfatize a necessidade de ação IMEDIATA e contenção.`
       },
       
       'exfiltration': {
-        system: `Você é um especialista em proteção de dados e detecção de exfiltração.
-DADOS DO INCIDENTE:
-- Tipo: Exfiltração de Dados
-- Severidade: ALTA
-- Usuário/Serviço: {user_service}
-- Host Origem: {host_origin}
-- IP Remoto: {remote_ip}
-- Volumes: {volumes}
-- Evidências: {evidence}
+        system: `
+[TAREFA] Você é um agente de IA assistente de Resposta a Incidentes (IR). Sua missão é investigar uma possível exfiltração de dados.
 
-Instruções específicas:
-- Foque em contenção da exfiltração
-- Oriente sobre revogação de credenciais
-- Explique verificação de permissões de acesso
-- Alerte sobre possível vazamento de dados sensíveis
-- Mantenha tom urgente e investigativo`,
-        welcome: `Crie uma mensagem sobre possível exfiltração de dados para {nome}.
-Destaque a transferência anômala e necessidade de ação.
-Refira-se a: {user_service}, {volumes}`
+CONTEXTO DO INCIDENTE:
+- Data: {data}
+- Hora (UTC-3): {hora_utc3}
+- Tipo de ataque: Possível exfiltração de dados para serviço externo
+- Usuário/Serviço: {user_service}
+- Host de Origem: {host_origin}
+- IP Remoto: {remote_ip}
+- Porta / Protocolo: {port_protocol}
+- Volumes: {volumes}
+- URLs: {urls}
+- Evidências: {evidence}
+- Severity: {severity}
+- Observação crítica: {critical_note}
+
+ROTEIRO DE INVESTIGAÇÃO (OBRIGATÓRIO)
+
+[AGENTE - Etapa 1: Início da Investigação]
+"Investigando transferência anômala de dados da conta {user_service}. Detectamos 18 GB transferidos em 7 minutos."
+
+[AGENTE - Etapa 2: Pergunta sobre Jobs Programados]
+"Houve algum job de sincronização ou processo programado ontem à noite às 23:05?"
+
+[AGENTE - Etapa 3: Identificação do Executor]
+"Quem executou essa operação? O time de integrações confirmou que não era um deploy."
+
+[AGENTE - Etapa 4: Verificação de Intencionalidade]
+"Preciso confirmar se esse tráfego para o S3 externo foi intencional - era um backup, migração ou processo legítimo?"
+
+[AGENTE - Etapa 5: Rotação de Credenciais]
+"As chaves de API da service account foram rotacionadas recentemente? Há suspeita de comprometimento?"
+
+INSTRUÇÕES ESPECÍFICAS:
+- Foque em determinar legitimidade da transferência
+- Investigue possível abuso de credenciais
+- Verifique se foi ação autorizada
+- Mantenha tom investigativo e urgente
+- Siga o roteiro passo a passo`,
+        welcome: `Crie uma mensagem sobre possível EXFILTRAÇÃO DE DADOS para {nome}.
+Mencione: conta {user_service}, volume {volumes}, destino {remote_ip}.
+Destaque a necessidade de verificação imediata da legitimidade.`
       },
       
       'default': {
@@ -396,7 +478,13 @@ Baseie-se na severidade {severity} e dados fornecidos.`
   // 🔥 GERAR MENSAGEM COM DADOS COMPLETOS DE SEGURANÇA
   async generateWelcomeMessage(callSid, securityData) {
     try {
-      const { nome, attack_type, severity, user_service, host_origin, remote_ip, port_protocol, volumes, urls, evidence, critical_note } = securityData;
+      const { 
+        nome, attack_type, severity, user_service, host_origin, remote_ip,
+        data, hora_utc3, ip_origem_cliente, ip_origem_remoto, ip_destino, 
+        port_protocol, urls, signatures_iocs, hashes_anexos, evidence, 
+        critical_note, host_afetado, ip_origem_host_interno, ips_remotos,
+        processos, hash_binario, volumes
+      } = securityData;
       
       const promptConfig = this.securityPrompts[attack_type] || this.securityPrompts.default;
       
@@ -410,11 +498,23 @@ Baseie-se na severidade {severity} e dados fornecidos.`
         .replace(/{user_service}/g, user_service)
         .replace(/{host_origin}/g, host_origin)
         .replace(/{remote_ip}/g, remote_ip)
+        .replace(/{data}/g, data)
+        .replace(/{hora_utc3}/g, hora_utc3)
+        .replace(/{ip_origem_cliente}/g, ip_origem_cliente || '')
+        .replace(/{ip_origem_remoto}/g, ip_origem_remoto || '')
+        .replace(/{ip_destino}/g, ip_destino || '')
         .replace(/{port_protocol}/g, port_protocol)
-        .replace(/{volumes}/g, volumes)
         .replace(/{urls}/g, urls)
+        .replace(/{signatures_iocs}/g, signatures_iocs || '')
+        .replace(/{hashes_anexos}/g, hashes_anexos || '')
         .replace(/{evidence}/g, evidence)
-        .replace(/{critical_note}/g, critical_note);
+        .replace(/{critical_note}/g, critical_note)
+        .replace(/{host_afetado}/g, host_afetado || '')
+        .replace(/{ip_origem_host_interno}/g, ip_origem_host_interno || '')
+        .replace(/{ips_remotos}/g, ips_remotos || '')
+        .replace(/{processos}/g, processos || '')
+        .replace(/{hash_binario}/g, hash_binario || '')
+        .replace(/{volumes}/g, volumes || '');
 
       console.log(`🎯 Gerando mensagem [${attack_type}-${severity}] para: ${nome}`);
       
@@ -441,7 +541,12 @@ Baseie-se na severidade {severity} e dados fornecidos.`
         throw new Error('Dados de segurança não encontrados');
       }
       
-      const { nome, attack_type, severity, user_service, host_origin, remote_ip, port_protocol, volumes, urls, evidence, critical_note } = securityData;
+      const { nome, attack_type, severity, user_service, host_origin, remote_ip,
+        data, hora_utc3, ip_origem_cliente, ip_origem_remoto, ip_destino, 
+        port_protocol, urls, signatures_iocs, hashes_anexos, evidence, 
+        critical_note, host_afetado, ip_origem_host_interno, ips_remotos,
+        processos, hash_binario, volumes } = securityData;
+      
       const recentHistory = history.slice(-3);
       
       const prompt = this.buildSecurityPrompt(userMessage, recentHistory, securityData);
@@ -483,7 +588,13 @@ Baseie-se na severidade {severity} e dados fornecidos.`
 
   // 🔥 CONSTRUIR PROMPT COM DADOS COMPLETOS DE SEGURANÇA
   buildSecurityPrompt(userMessage, history, securityData) {
-    const { nome, attack_type, severity, user_service, host_origin, remote_ip, port_protocol, volumes, urls, evidence, critical_note } = securityData;
+    const { 
+      nome, attack_type, severity, user_service, host_origin, remote_ip,
+      data, hora_utc3, ip_origem_cliente, ip_origem_remoto, ip_destino, 
+      port_protocol, urls, signatures_iocs, hashes_anexos, evidence, 
+      critical_note, host_afetado, ip_origem_host_interno, ips_remotos,
+      processos, hash_binario, volumes
+    } = securityData;
     
     const promptConfig = this.securityPrompts[attack_type] || this.securityPrompts.default;
     
@@ -494,11 +605,23 @@ Baseie-se na severidade {severity} e dados fornecidos.`
       .replace(/{user_service}/g, user_service)
       .replace(/{host_origin}/g, host_origin)
       .replace(/{remote_ip}/g, remote_ip)
+      .replace(/{data}/g, data)
+      .replace(/{hora_utc3}/g, hora_utc3)
+      .replace(/{ip_origem_cliente}/g, ip_origem_cliente || '')
+      .replace(/{ip_origem_remoto}/g, ip_origem_remoto || '')
+      .replace(/{ip_destino}/g, ip_destino || '')
       .replace(/{port_protocol}/g, port_protocol)
-      .replace(/{volumes}/g, volumes)
       .replace(/{urls}/g, urls)
+      .replace(/{signatures_iocs}/g, signatures_iocs || '')
+      .replace(/{hashes_anexos}/g, hashes_anexos || '')
       .replace(/{evidence}/g, evidence)
-      .replace(/{critical_note}/g, critical_note);
+      .replace(/{critical_note}/g, critical_note)
+      .replace(/{host_afetado}/g, host_afetado || '')
+      .replace(/{ip_origem_host_interno}/g, ip_origem_host_interno || '')
+      .replace(/{ips_remotos}/g, ips_remotos || '')
+      .replace(/{processos}/g, processos || '')
+      .replace(/{hash_binario}/g, hash_binario || '')
+      .replace(/{volumes}/g, volumes || '');
 
     if (history.length > 0) {
       history.forEach(([user, assistant]) => {
@@ -508,7 +631,7 @@ Baseie-se na severidade {severity} e dados fornecidos.`
     }
 
     prompt += `\n\nUsuário: ${userMessage}`;
-    prompt += `\n\nSua resposta (curta, focada em segurança, para ${nome}):`;
+    prompt += `\n\nSua resposta (curta, seguindo o roteiro, para ${nome}):`;
 
     return prompt;
   }
@@ -885,37 +1008,8 @@ wss.on("connection", (ws, req) => {
 });
 
 // =============================
-// 📞 Endpoints Twilio
+// 🚨 DADOS PRÉ-DEFINIDOS PARA CADA TIPO DE ATAQUE
 // =============================
-app.post("/twiml", (req, res) => {
-  try {
-    const response = new twilio.twiml.VoiceResponse();
-
-    response.say({ 
-      voice: "alice", 
-      language: "pt-BR" 
-    }, "Alerta de Segurança!");
-
-    const start = response.start();
-    start.stream({ 
-      url: `wss://${new URL(baseUrl).host}/media-stream`,
-      track: "inbound_track"
-    });
-
-    response.pause({ length: 300 });
-
-    res.type("text/xml");
-    res.send(response.toString());
-    
-    console.log("📞 TwiML de segurança gerado");
-    
-  } catch (error) {
-    console.error("❌ Erro gerando TwiML:", error);
-    res.status(500).send("Erro interno");
-  }
-});
-
-// 🔥 DADOS PRÉ-DEFINIDOS PARA CADA TIPO DE ATAQUE
 const SECURITY_INCIDENTS = {
   'phishing': {
     data: '2025-10-22',
@@ -935,8 +1029,7 @@ const SECURITY_INCIDENTS = {
     critical_note: 'Usuário informou via chat que "clicou no link e inseriu a senha" — ação imediata necessária.',
     // Propriedades mapeadas para compatibilidade
     remote_ip: '185.62.128.44',
-    volumes: 'Credenciais potencialmente comprometidas',
-    critical_note: 'Usuário informou via chat que "clicou no link e inseriu a senha" — ação imediata necessária.'
+    volumes: 'Credenciais potencialmente comprometidas'
   },
 
   'ransomware': {
@@ -986,6 +1079,37 @@ function getCurrentDateTime() {
     timestamp: now.toISOString()
   };
 }
+
+// =============================
+// 📞 Endpoints Twilio
+// =============================
+app.post("/twiml", (req, res) => {
+  try {
+    const response = new twilio.twiml.VoiceResponse();
+
+    response.say({ 
+      voice: "alice", 
+      language: "pt-BR" 
+    }, "Alerta de Segurança!");
+
+    const start = response.start();
+    start.stream({ 
+      url: `wss://${new URL(baseUrl).host}/media-stream`,
+      track: "inbound_track"
+    });
+
+    response.pause({ length: 300 });
+
+    res.type("text/xml");
+    res.send(response.toString());
+    
+    console.log("📞 TwiML de segurança gerado");
+    
+  } catch (error) {
+    console.error("❌ Erro gerando TwiML:", error);
+    res.status(500).send("Erro interno");
+  }
+});
 
 app.post("/make-call", async (req, res) => {
   let to = req.body.to;
@@ -1319,12 +1443,13 @@ app.get("/", (req, res) => {
                 <h4>Phishing Detectado</h4>
                 <div class="severity severity-high">ALTA SEVERIDADE</div>
                 <div class="incident-details">
-                  <div>📅 Data: ${getCurrentDateTime().date}</div>
-                  <div>⏰ Hora: ${getCurrentDateTime().time} UTC-3</div>
+                  <div>📅 Data: 2025-10-22</div>
+                  <div>⏰ Hora: 09:18 UTC-3</div>
                   <div>👤 Usuário: joao.souza@empresa.com</div>
                   <div>🌐 Host: WORKSTATION-045</div>
-                  <div>📍 IP: 185.62.128.44</div>
-                  <div>⚠️ Risco: Credenciais comprometidas</div>
+                  <div>📍 IP Remoto: 185.62.128.44</div>
+                  <div>🚨 Risco: Credenciais comprometidas + Macro</div>
+                  <div>⚠️ URL: secure-empresa-login[.]com</div>
                 </div>
               </div>
               
@@ -1333,12 +1458,12 @@ app.get("/", (req, res) => {
                 <h4>Infecção por Ransomware</h4>
                 <div class="severity severity-critical">CRÍTICO</div>
                 <div class="incident-details">
-                  <div>📅 Data: ${getCurrentDateTime().date}</div>
-                  <div>⏰ Hora: ${getCurrentDateTime().time} UTC-3</div>
+                  <div>📅 Data: 2025-10-22</div>
+                  <div>⏰ Hora: 02:44 UTC-3</div>
                   <div>🖥️ Servidor: srv-finance-03.corp.local</div>
-                  <div>📍 IP: 10.20.5.73</div>
-                  <div>📊 Dados: Arquivos criptografados</div>
-                  <div>🚨 Alerta: Ransomware ativo</div>
+                  <div>📍 IPs: 45.77.123.9 (C2), 104.21.12.34</div>
+                  <div>⚙️ Processo: evil-encryptor.exe</div>
+                  <div>🚨 Alerta: Criptografia ativa + Shadow copies</div>
                 </div>
               </div>
               
@@ -1347,12 +1472,12 @@ app.get("/", (req, res) => {
                 <h4>Exfiltração de Dados</h4>
                 <div class="severity severity-high">ALTA SEVERIDADE</div>
                 <div class="incident-details">
-                  <div>📅 Data: ${getCurrentDateTime().date}</div>
-                  <div>⏰ Hora: ${getCurrentDateTime().time} UTC-3</div>
+                  <div>📅 Data: 2025-10-21</div>
+                  <div>⏰ Hora: 23:05-23:12 UTC-3</div>
                   <div>👤 Serviço: svc-integration@empresa.com</div>
                   <div>🖥️ Host: app-integration-01</div>
-                  <div>📊 Volume: 18 GB transferidos</div>
-                  <div>🚨 Risco: Dados sensíveis</div>
+                  <div>📊 Volume: 18 GB em 7 minutos</div>
+                  <div>🚨 Risco: PIIs em bucket sensível</div>
                 </div>
               </div>
             </div>
