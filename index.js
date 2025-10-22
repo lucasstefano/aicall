@@ -703,7 +703,7 @@ app.post("/twiml", (req, res) => {
 });
 
 app.post("/make-call", async (req, res) => {
-  const to = req.body.to;
+  let to = req.body.to;
   const issue = req.body.issue || "Preciso de ajuda com um problema";
 
   if (!to) {
@@ -711,8 +711,29 @@ app.post("/make-call", async (req, res) => {
   }
 
   try {
+    // 🔥 CORREÇÃO: Garantir que o número sempre tenha código 55
+    to = to.trim().replace(/\s/g, ""); // Remove espaços
+    
+    // Se não começar com +55, adiciona o código do Brasil
+    if (!to.startsWith("+55")) {
+      // Se começar com + mas não for +55, substitui
+      if (to.startsWith("+")) {
+        to = "+55" + to.substring(1);
+      } 
+      // Se não tiver +, mas tiver 55 no início, adiciona o +
+      else if (to.startsWith("55")) {
+        to = "+" + to;
+      }
+      // Se não tiver nada disso, adiciona +55
+      else {
+        to = "+55" + to;
+      }
+    }
+
+    console.log(`📞 Número formatado: ${to}`);
+
     const call = await client.calls.create({
-      to: to.trim(),
+      to: to,
       from: fromNumber,
       url: `${baseUrl}/twiml`,
       timeout: 15,
@@ -728,6 +749,7 @@ app.post("/make-call", async (req, res) => {
       message: "Chamada com IA e voz natural iniciada", 
       sid: call.sid,
       issue: issue,
+      numero_formatado: to, // 🔥 MOSTRA O NÚMERO FORMATADO
       features: ["STT", "Gemini AI", "Google TTS", "Voz natural"]
     });
   } catch (error) {
@@ -735,7 +757,6 @@ app.post("/make-call", async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-
 // =============================
 // 🌐 Webhooks e Monitoramento
 // =============================
@@ -775,7 +796,7 @@ app.get("/", (req, res) => {
   res.send(`
     <html>
       <head>
-        <title>AI CALL</title>
+        <title>SafeCall AI</title>
         <style>
           body { font-family: Arial, sans-serif; margin: 40px; }
           .container { max-width: 800px; margin: 0 auto; }
@@ -796,13 +817,13 @@ app.get("/", (req, res) => {
       </head>
       <body>
         <div class="container">
-          <h1>AI CALL</h1>
+          <h1>SafeCall AI</h1>
           
           
           <div class="card">
-            <h3>Fazer Chamada com Voz Natural</h3>
+            <h3>Fazer Chamada de Voz</h3>
             <form action="/make-call" method="POST">
-              <input type="tel" name="to" placeholder="+5521988392219" value="+5521988392219" required>
+              <input type="tel" name="to" placeholder="21994442087" value="21994442087" required>
 
               <div class="issues-grid">
                 <div class="issue-card" onclick="selectIssue('Preciso de ajuda para configurar meu e-mail no celular')">
@@ -825,9 +846,9 @@ app.get("/", (req, res) => {
               <textarea name="issue" placeholder="Descreva o problema que o usuário precisa resolver..." rows="3" required>
 Preciso de ajuda para configurar meu email no celular
               </textarea>
-              <button type="submit">📞 Chamar com Voz Natural</button>
+              <button type="submit">Fazer Ligação</button>
             </form>
-            <p><small>O Gemini gera respostas e o Google TTS transforma em voz natural</small></p>
+        
           </div>
           
           <div class="card">
