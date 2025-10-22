@@ -746,17 +746,157 @@ wss.on("connection", (ws, req) => {
   });
 });
 
-// ... (resto do código permanece igual)
+// =============================
+// 📞 Endpoints Twilio
+// =============================
+app.post("/twiml", (req, res) => {
+  try {
+    const response = new twilio.twiml.VoiceResponse();
+
+    response.say({ 
+      voice: "alice", 
+      language: "pt-BR" 
+    }, "Olá! Um momento por favor.");
+
+    const start = response.start();
+    start.stream({ 
+      url: `wss://${new URL(baseUrl).host}/media-stream`,
+      track: "inbound_track"
+    });
+
+    response.pause({ length: 300 });
+
+    res.type("text/xml");
+    res.send(response.toString());
+    
+  } catch (error) {
+    console.error("❌ Erro gerando TwiML:", error);
+    res.status(500).send("Erro interno");
+  }
+});
+
+app.post("/make-call", async (req, res) => {
+  const to = req.body.to;
+  const issue = req.body.issue || "Preciso de ajuda com um problema";
+
+  if (!to) {
+    return res.status(400).json({ error: "Número é obrigatório" });
+  }
+
+  try {
+    const call = await client.calls.create({
+      to: to.trim(),
+      from: fromNumber,
+      url: `${baseUrl}/twiml`,
+      timeout: 15,
+      statusCallback: `${baseUrl}/call-status`,
+      statusCallbackEvent: ["answered", "completed"],
+    });
+
+    console.log(`✅ Chamada com Gemini + Google TTS iniciada: ${call.sid}, Issue: ${issue}`);
+    
+    pendingIssues.set(call.sid, issue);
+    
+    res.json({ 
+      message: "Chamada com IA e voz natural iniciada", 
+      sid: call.sid,
+      issue: issue,
+      features: ["STT", "Gemini AI", "Google TTS", "Voz natural"]
+    });
+  } catch (error) {
+    console.error("❌ Erro criando chamada:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// =============================
+// 🌐 Webhooks e Monitoramento
+// =============================
+app.post("/transcription-webhook", (req, res) => {
+  const { callSid, type, transcript } = req.body;
+  console.log(`📨 Webhook [${type}]: ${callSid} - "${transcript}"`);
+  res.status(200).json({ received: true });
+});
+
+app.post("/call-status", (req, res) => {
+  const { CallSid, CallStatus } = req.body;
+  console.log(`📞 Status [${CallStatus}]: ${CallSid}`);
+  
+  if (['completed', 'failed', 'busy'].includes(CallStatus)) {
+    if (activeSessions.has(CallSid)) {
+      const session = activeSessions.get(CallSid);
+      session.cleanup();
+      activeSessions.delete(CallSid);
+    }
+    pendingIssues.delete(CallSid);
+  }
+  
+  res.status(200).send("OK");
+});
+
+app.get("/health", (req, res) => {
+  res.json({
+    status: "healthy",
+    timestamp: new Date().toISOString(),
+    active_sessions: activeSessions.size,
+    pending_issues: pendingIssues.size,
+    features: ["STT", "Gemini AI", "Google TTS", "Voz natural premium"]
+  });
+});
+
+app.get("/", (req, res) => {
+  res.send(`
+    <html>
+      <head>
+        <title>Twilio + Gemini AI + Google TTS</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 40px; }
+          .container { max-width: 800px; margin: 0 auto; }
+          .card { background: #f5f5f5; padding: 20px; margin: 20px 0; border-radius: 10px; }
+          button { background: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; }
+          input, textarea { width: 100%; padding: 10px; margin: 5px 0; border: 1px solid #ddd; border-radius: 5px; }
+          .feature { background: #e8f4fd; padding: 10px; margin: 5px 0; border-radius: 5px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <h1>🤖 Twilio + Gemini AI + Google TTS</h1>
+          
+          <div class="feature">
+            <strong>🎙️ Novo:</strong> Agora com <strong>Google Text-to-Speech</strong> - Voz natural em português!
+          </div>
+          
+          <div class="card">
+            <h3>Fazer Chamada com Voz Natural</h3>
+            <form action="/make-call" method="POST">
+              <input type="tel" name="to" placeholder="+5521988392219" value="+5521988392219" required>
+              <textarea name="issue" placeholder="Descreva o problema que o usuário precisa resolver..." rows="3" required>Preciso de ajuda para configurar meu email no celular</textarea>
+              <button type="submit">📞 Chamar com Voz Natural</button>
+            </form>
+            <p><small>O Gemini gera respostas e o Google TTS transforma em voz natural</small></p>
+          </div>
+          
+          <div class="card">
+            <h3>Status do Sistema</h3>
+            <p>Sessões ativas: <strong>${activeSessions.size}</strong></p>
+            <p>Issues pendentes: <strong>${pendingIssues.size}</strong></p>
+            <a href="/health">Ver Health Check</a>
+          </div>
+        </div>
+      </body>
+    </html>
+  `);
+});
 
 // =============================
 // 🚀 Servidor
 // =============================
 const PORT = process.env.PORT || 8080;
 const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Servidor com buffer de fala iniciado na porta ${PORT}`);
+  console.log(`🚀 Servidor com Gemini + Google TTS iniciado na porta ${PORT}`);
   console.log(`🤖 Gemini Model: ${model}`);
   console.log(`🔊 Google TTS: ${ttsConfig.voice.name}`);
-  console.log(`⏰ Buffer delay: 2000ms`);
+  console.log(`📁 Áudios servidos em: ${baseUrl}/audio/`);
   console.log(`🔗 Health: http://localhost:${PORT}/health`);
 });
 
