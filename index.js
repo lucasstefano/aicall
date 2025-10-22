@@ -10,6 +10,8 @@ import { join } from 'path';
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+
+// 🔥 NOVO: Servir arquivos de áudio estáticos
 app.use('/audio', express.static('audio'));
 
 const accountSid = process.env.TWILIO_ACCOUNT_SID;
@@ -21,6 +23,7 @@ const client = twilio(accountSid, authToken);
 const clientSTT = new speech.SpeechClient();
 const clientTTS = new textToSpeech.TextToSpeechClient();
 
+// 🔥 NOVO: Criar diretório para áudios
 const audioDir = join(process.cwd(), 'audio');
 if (!existsSync(audioDir)) {
   mkdirSync(audioDir, { recursive: true });
@@ -45,7 +48,7 @@ const generativeModel = vertex_ai.getGenerativeModel({
 });
 
 // =============================
-// 🎙️ Configuração Google TTS
+// 🎙️ Configuração Google TTS (OTIMIZADA)
 // =============================
 const ttsConfig = {
   voice: {
@@ -54,7 +57,7 @@ const ttsConfig = {
     ssmlGender: 'MALE'
   },
   audioConfig: {
-    audioEncoding: 'MP3',
+    audioEncoding: 'MP3', // 🔥 MUDADO para MP3 (menor tamanho)
     sampleRateHertz: 8000,
     speakingRate: 1.0,
     pitch: 0.0,
@@ -63,25 +66,20 @@ const ttsConfig = {
 };
 
 // =============================
-// 🎯 Sistema de Fila para Respostas (COM BUFFER DE FALA)
+// 🎯 Sistema de Fila para Respostas (CORRIGIDO)
 // =============================
 class ResponseQueue {
   constructor() {
     this.queue = new Map();
     this.processingDelay = 2000;
     this.maxRetries = 3;
-    this.audioFileCleanup = new Map();
+    this.audioFileCleanup = new Map(); // callSid -> [audioFiles]
   }
 
   addResponse(callSid, responseText) {
     try {
       if (!this.queue.has(callSid)) {
-        this.queue.set(callSid, { 
-          responses: [], 
-          isProcessing: false, 
-          retryCount: 0,
-          isTTSPlaying: false // 🔥 NOVO: Controla se TTS está tocando
-        });
+        this.queue.set(callSid, { responses: [], isProcessing: false, retryCount: 0 });
         this.audioFileCleanup.set(callSid, []);
       }
       
@@ -95,7 +93,7 @@ class ResponseQueue {
 
       console.log(`📥 Fila [${callSid}]: "${responseText.substring(0, 50)}..."`);
       
-      if (!callQueue.isProcessing && !callQueue.isTTSPlaying) {
+      if (!callQueue.isProcessing) {
         this.processQueue(callSid);
       }
     } catch (error) {
@@ -103,23 +101,9 @@ class ResponseQueue {
     }
   }
 
-  // 🔥 NOVO: Marca quando TTS começa/termina
-  setTTSPlaying(callSid, isPlaying) {
-    if (this.queue.has(callSid)) {
-      const callQueue = this.queue.get(callSid);
-      callQueue.isTTSPlaying = isPlaying;
-      console.log(`🔊 TTS [${callSid}]: ${isPlaying ? 'INICIADO' : 'FINALIZADO'}`);
-      
-      // Se TTS terminou e há respostas na fila, processa
-      if (!isPlaying && callQueue.responses.length > 0 && !callQueue.isProcessing) {
-        setTimeout(() => this.processQueue(callSid), 500);
-      }
-    }
-  }
-
   async processQueue(callSid) {
     const callQueue = this.queue.get(callSid);
-    if (!callQueue || callQueue.responses.length === 0 || callQueue.isTTSPlaying) {
+    if (!callQueue || callQueue.responses.length === 0) {
       if (callQueue) {
         callQueue.isProcessing = false;
         callQueue.retryCount = 0;
@@ -133,35 +117,27 @@ class ResponseQueue {
     try {
       console.log(`🎯 Processando TTS para [${callSid}]: "${response.text}"`);
       
-      // 🔥 MARCA QUE TTS VAI COMEÇAR
-      this.setTTSPlaying(callSid, true);
-      
+      // 🔥 CORREÇÃO: Gera arquivo de áudio e hospeda externamente
       const audioUrl = await this.generateAndHostTTS(callSid, response.text);
+      
+      // Envia via TwiML com URL externa
       await this.updateCallWithAudioURL(callSid, audioUrl);
       
+      // Remove da fila após sucesso
       callQueue.responses.shift();
       callQueue.retryCount = 0;
       
       console.log(`✅ Áudio TTS enviado para [${callSid}]. Restantes: ${callQueue.responses.length}`);
       
-      // 🔥 AGUARDA O TTS TERMINAR ANTES DE PROCESSAR PRÓXIMO
-      // O TTS dura aproximadamente (texto.length / 10) segundos
-      const estimatedTTSTime = Math.max(response.text.length / 8 * 1000, 2000);
-      setTimeout(() => {
-        this.setTTSPlaying(callSid, false);
-        
-        if (callQueue.responses.length > 0) {
-          setTimeout(() => this.processQueue(callSid), 500);
-        } else {
-          callQueue.isProcessing = false;
-        }
-      }, estimatedTTSTime);
+      // Agenda próximo processamento
+      if (callQueue.responses.length > 0) {
+        setTimeout(() => this.processQueue(callSid), this.processingDelay);
+      } else {
+        callQueue.isProcessing = false;
+      }
       
     } catch (error) {
       console.error(`❌ Erro processando TTS [${callSid}]:`, error);
-      
-      // 🔥 GARANTE QUE TTS ESTÁ PARADO MESMO EM ERRO
-      this.setTTSPlaying(callSid, false);
       
       response.retries += 1;
       if (response.retries >= this.maxRetries) {
@@ -179,6 +155,7 @@ class ResponseQueue {
     }
   }
 
+  // 🔥 CORREÇÃO: Gera arquivo MP3 e retorna URL pública
   async generateAndHostTTS(callSid, text) {
     try {
       const request = {
@@ -186,7 +163,7 @@ class ResponseQueue {
         voice: ttsConfig.voice,
         audioConfig: {
           ...ttsConfig.audioConfig,
-          audioEncoding: 'MP3'
+          audioEncoding: 'MP3' // Sempre MP3 para menor tamanho
         }
       };
 
@@ -198,11 +175,13 @@ class ResponseQueue {
         throw new Error('Resposta de TTS vazia');
       }
       
+      // 🔥 SALVA COMO ARQUIVO MP3
       const filename = `tts_${callSid}_${Date.now()}.mp3`;
       const filepath = join(audioDir, filename);
       
       writeFileSync(filepath, response.audioContent, 'binary');
       
+      // Registra arquivo para limpeza posterior
       if (this.audioFileCleanup.has(callSid)) {
         this.audioFileCleanup.get(callSid).push(filepath);
       }
@@ -218,12 +197,15 @@ class ResponseQueue {
     }
   }
 
+  // 🔥 CORREÇÃO: Usa URL externa em vez de base64
   async updateCallWithAudioURL(callSid, audioUrl) {
     try {
       const twiml = new twilio.twiml.VoiceResponse();
       
+      // 🔥 USA URL EXTERNA - não tem limite de tamanho!
       twiml.play({}, audioUrl);
       
+      // Mantém o stream aberto
       const start = twiml.start();
       start.stream({ 
         url: `wss://${new URL(baseUrl).host}/media-stream`,
@@ -233,7 +215,7 @@ class ResponseQueue {
       twiml.pause({ length: 120 });
 
       const twimlString = twiml.toString();
-      console.log(`📊 TwiML size: ${twimlString.length} chars`);
+      console.log(`📊 TwiML size: ${twimlString.length} chars (limite: 4000)`);
       
       if (twimlString.length > 4000) {
         throw new Error(`TwiML muito grande: ${twimlString.length} caracteres`);
@@ -258,7 +240,9 @@ class ResponseQueue {
     }
   }
 
+  // 🔥 NOVO: Limpa arquivos de áudio
   cleanup(callSid) {
+    // Remove arquivos de áudio
     if (this.audioFileCleanup.has(callSid)) {
       const audioFiles = this.audioFileCleanup.get(callSid);
       audioFiles.forEach(filepath => {
@@ -282,7 +266,7 @@ class ResponseQueue {
 const responseQueue = new ResponseQueue();
 
 // =============================
-// 🧠 Gemini Service
+// 🧠 Gemini Service (MANTIDO)
 // =============================
 class GeminiService {
   constructor() {
@@ -436,7 +420,7 @@ const sttConfig = {
 };
 
 // =============================
-// 🎙️ Audio Stream Session (COM BUFFER DE FALA)
+// 🎙️ Audio Stream Session
 // =============================
 class AudioStreamSession {
   constructor(ws, callSid, issue = null) {
@@ -450,12 +434,6 @@ class AudioStreamSession {
     this.consecutiveErrors = 0;
     this.maxConsecutiveErrors = 3;
     this.healthCheckInterval = null;
-    
-    // 🔥 NOVO: Sistema de buffer para falas sobrepostas
-    this.speechBuffer = [];
-    this.bufferTimeout = null;
-    this.bufferDelay = 1500; // 2 segundos de espera após TTS
-    this.isAISpeaking = false; // Controla se AI está falando
     
     console.log(`🎧 Nova sessão: ${callSid}, Issue: ${issue}`);
     this.setupSTT();
@@ -515,17 +493,6 @@ class AudioStreamSession {
     }
   }
 
-  // 🔥 NOVO: Processa buffer após timeout
-  processSpeechBuffer() {
-    if (this.speechBuffer.length > 0 && !this.isAISpeaking) {
-      const transcript = this.speechBuffer.join(' ');
-      console.log(`🎯 Processando buffer [${this.callSid}]: "${transcript}"`);
-      
-      this.speechBuffer = []; // Limpa buffer
-      this.processWithGemini(transcript);
-    }
-  }
-
   async handleSTTData(data) {
     try {
       if (data.results && data.results[0]) {
@@ -540,21 +507,7 @@ class AudioStreamSession {
         if (isFinal) {
           console.log(`📝 [FINAL] ${this.callSid}: ${transcript}`);
           
-          // 🔥 LÓGICA DE BUFFER: Se AI está falando, armazena no buffer
-          if (this.isAISpeaking) {
-            console.log(`⏸️  Fala sobreposta detectada [${this.callSid}], armazenando no buffer: "${transcript}"`);
-            this.speechBuffer.push(transcript);
-            
-            // Reinicia timeout do buffer
-            if (this.bufferTimeout) {
-              clearTimeout(this.bufferTimeout);
-            }
-            this.bufferTimeout = setTimeout(() => {
-              this.processSpeechBuffer();
-            }, this.bufferDelay);
-            
-          } else if (transcript !== this.lastFinalTranscript && transcript.length > 2) {
-            // Se AI não está falando, processa imediatamente
+          if (transcript !== this.lastFinalTranscript && transcript.length > 2) {
             this.lastFinalTranscript = transcript;
             await this.processWithGemini(transcript);
           }
@@ -584,26 +537,7 @@ class AudioStreamSession {
       const geminiResponse = await geminiService.generateResponse(this.callSid, transcript);
       
       if (geminiResponse && geminiResponse.length > 2) {
-        // 🔥 MARCA QUE AI VAI FALAR
-        this.isAISpeaking = true;
-        responseQueue.setTTSPlaying(this.callSid, true);
-        
         responseQueue.addResponse(this.callSid, geminiResponse);
-        
-        // 🔥 ESTIMA QUANDO AI TERMINARÁ DE FALAR
-        const estimatedSpeechTime = Math.max(geminiResponse.length / 8 * 1000, 2000);
-        setTimeout(() => {
-          this.isAISpeaking = false;
-          responseQueue.setTTSPlaying(this.callSid, false);
-          console.log(`🔊 AI parou de falar [${this.callSid}], verificando buffer...`);
-          
-          // 🔥 APÓS AI PARAR, VERIFICA BUFFER APÓS DELAY
-          setTimeout(() => {
-            this.processSpeechBuffer();
-          }, this.bufferDelay);
-          
-        }, estimatedSpeechTime);
-        
       } else {
         console.log(`⚠️ Resposta Gemini vazia para [${this.callSid}]`);
       }
@@ -611,8 +545,6 @@ class AudioStreamSession {
     } catch (error) {
       console.error(`❌ Erro processamento Gemini [${this.callSid}]:`, error);
       this.consecutiveErrors++;
-      this.isAISpeaking = false;
-      responseQueue.setTTSPlaying(this.callSid, false);
       
     } finally {
       this.geminiProcessing = false;
@@ -634,11 +566,6 @@ class AudioStreamSession {
 
   cleanup() {
     this.isActive = false;
-    this.isAISpeaking = false;
-    
-    if (this.bufferTimeout) {
-      clearTimeout(this.bufferTimeout);
-    }
     
     if (this.healthCheckInterval) {
       clearInterval(this.healthCheckInterval);
