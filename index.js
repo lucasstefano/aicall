@@ -66,7 +66,7 @@ const ttsConfig = {
 };
 
 // =============================
-// 🎯 Sistema de Fila para Respostas (ATUALIZADO)
+// 🎯 Sistema de Fila para Respostas (CORRIGIDO)
 // =============================
 class ResponseQueue {
   constructor() {
@@ -74,7 +74,6 @@ class ResponseQueue {
     this.processingDelay = 2000;
     this.maxRetries = 3;
     this.audioFileCleanup = new Map(); // callSid -> [audioFiles]
-    this.currentlySpeaking = new Map(); // callSid -> boolean (se está falando)
   }
 
   addResponse(callSid, responseText) {
@@ -82,7 +81,6 @@ class ResponseQueue {
       if (!this.queue.has(callSid)) {
         this.queue.set(callSid, { responses: [], isProcessing: false, retryCount: 0 });
         this.audioFileCleanup.set(callSid, []);
-        this.currentlySpeaking.set(callSid, false);
       }
       
       const callQueue = this.queue.get(callSid);
@@ -93,7 +91,7 @@ class ResponseQueue {
         retries: 0
       });
 
-      console.log(`📥 Fila [${callSid}]: Adicionada resposta "${responseText.substring(0, 50)}..." | Total na fila: ${callQueue.responses.length}`);
+      console.log(`📥 Fila [${callSid}]: "${responseText.substring(0, 50)}..."`);
       
       if (!callQueue.isProcessing) {
         this.processQueue(callSid);
@@ -109,17 +107,15 @@ class ResponseQueue {
       if (callQueue) {
         callQueue.isProcessing = false;
         callQueue.retryCount = 0;
-        this.currentlySpeaking.set(callSid, false);
       }
       return;
     }
 
     callQueue.isProcessing = true;
-    this.currentlySpeaking.set(callSid, true);
     const response = callQueue.responses[0];
 
     try {
-      console.log(`🎯 Iniciando TTS para [${callSid}]: "${response.text}" | Fila: ${callQueue.responses.length}`);
+      console.log(`🎯 Processando TTS para [${callSid}]: "${response.text}"`);
       
       // 🔥 CORREÇÃO: Gera arquivo de áudio e hospeda externamente
       const audioUrl = await this.generateAndHostTTS(callSid, response.text);
@@ -131,14 +127,13 @@ class ResponseQueue {
       callQueue.responses.shift();
       callQueue.retryCount = 0;
       
-      console.log(`✅ TTS concluído para [${callSid}]. Restantes na fila: ${callQueue.responses.length}`);
+      console.log(`✅ Áudio TTS enviado para [${callSid}]. Restantes: ${callQueue.responses.length}`);
       
       // Agenda próximo processamento
       if (callQueue.responses.length > 0) {
         setTimeout(() => this.processQueue(callSid), this.processingDelay);
       } else {
         callQueue.isProcessing = false;
-        this.currentlySpeaking.set(callSid, false);
       }
       
     } catch (error) {
@@ -151,29 +146,12 @@ class ResponseQueue {
       }
       
       callQueue.isProcessing = false;
-      this.currentlySpeaking.set(callSid, false);
       
       if (callQueue.responses.length > 0) {
         const retryDelay = Math.min(5000 * response.retries, 30000);
-        console.log(`🔄 Retentando TTS em ${retryDelay}ms para [${callSid}]...`);
+        console.log(`🔄 Retentando TTS em ${retryDelay}ms...`);
         setTimeout(() => this.processQueue(callSid), retryDelay);
       }
-    }
-  }
-
-  // 🔥 NOVO: Verifica se está falando no momento
-  isSpeaking(callSid) {
-    return this.currentlySpeaking.get(callSid) || false;
-  }
-
-  // 🔥 NOVO: Interrompe fala atual e limpa fila
-  interruptAndClear(callSid) {
-    const callQueue = this.queue.get(callSid);
-    if (callQueue) {
-      console.log(`🔄 Interrompendo fala e limpando fila para [${callSid}] | Fila anterior: ${callQueue.responses.length}`);
-      callQueue.responses = []; // Limpa todas as respostas pendentes
-      callQueue.isProcessing = false;
-      this.currentlySpeaking.set(callSid, false);
     }
   }
 
@@ -189,7 +167,7 @@ class ResponseQueue {
         }
       };
 
-      console.log(`🔊 Gerando TTS MP3 para [${callSid}]: "${text.substring(0, 50)}..."`);
+      console.log(`🔊 Gerando TTS MP3: "${text.substring(0, 50)}..."`);
       
       const [response] = await clientTTS.synthesizeSpeech(request);
       
@@ -209,7 +187,7 @@ class ResponseQueue {
       }
       
       const audioUrl = `${baseUrl}/audio/${filename}`;
-      console.log(`✅ TTS salvo: ${filename} (${response.audioContent.length} bytes) para [${callSid}]`);
+      console.log(`✅ TTS salvo: ${filename} (${response.audioContent.length} bytes)`);
       
       return audioUrl;
       
@@ -237,7 +215,7 @@ class ResponseQueue {
       twiml.pause({ length: 120 });
 
       const twimlString = twiml.toString();
-      console.log(`📊 TwiML para [${callSid}]: ${twimlString.length} chars (limite: 4000)`);
+      console.log(`📊 TwiML size: ${twimlString.length} chars (limite: 4000)`);
       
       if (twimlString.length > 4000) {
         throw new Error(`TwiML muito grande: ${twimlString.length} caracteres`);
@@ -267,7 +245,6 @@ class ResponseQueue {
     // Remove arquivos de áudio
     if (this.audioFileCleanup.has(callSid)) {
       const audioFiles = this.audioFileCleanup.get(callSid);
-      console.log(`🗑️ Limpando ${audioFiles.length} arquivos de áudio para [${callSid}]`);
       audioFiles.forEach(filepath => {
         try {
           if (existsSync(filepath)) {
@@ -282,46 +259,27 @@ class ResponseQueue {
     }
     
     this.queue.delete(callSid);
-    this.currentlySpeaking.delete(callSid);
-    console.log(`🧹 Fila TTS completamente limpa para [${callSid}]`);
+    console.log(`🧹 Fila TTS limpa para [${callSid}]`);
   }
 }
 
 const responseQueue = new ResponseQueue();
 
 // =============================
-// 🧠 Gemini Service (ATUALIZADO PARA CONVERSA FLUIDA)
+// 🧠 Gemini Service (MANTIDO)
 // =============================
 class GeminiService {
   constructor() {
     this.conversationHistory = new Map();
     this.userIssues = new Map();
-    this.userNames = new Map();
-    this.maxHistoryLength = 8; // 🔥 AUMENTADO para manter mais contexto
+    this.maxHistoryLength = 6;
   }
 
-  // 🔥 ATUALIZADO: Agora recebe o nome do usuário
-  async generateWelcomeMessage(callSid, issue, userName = null) {
+  async generateWelcomeMessage(callSid, issue) {
     try {
       this.userIssues.set(callSid, issue);
-      if (userName) {
-        this.userNames.set(callSid, userName);
-      }
       
-      const prompt = userName 
-        ? `Crie uma MENSAGEM DE BOAS-VINDAS personalizada em português brasileiro.
-
-Contexto: ${issue}
-Nome do usuário: ${userName}
-
-Regras:
-- Use o nome da pessoa naturalmente
-- Apenas UMA frase curta
-- Seja amigável
-- Linguagem natural
-- Nunca Use Emojis
-Sua mensagem:`
-        : `Crie uma MENSAGEM DE BOAS-VINDAS inicial em português brasileiro.
+      const prompt = `Crie uma MENSAGEM DE BOAS-VINDAS inicial em português brasileiro.
 
 Contexto: ${issue}
 
@@ -329,85 +287,35 @@ Regras:
 - Apenas UMA frase curta
 - Seja amigável
 - Linguagem natural
-- Nunca Use Emojis
+
 Sua mensagem:`;
 
-      console.log(`🎯 Gerando mensagem de boas-vindas para: ${issue} | Nome: ${userName || 'Não informado'}`);
+      console.log(`🎯 Gerando mensagem de boas-vindas para: ${issue}`);
       
       const result = await generativeModel.generateContent(prompt);
       const response = result.response;
       const welcomeMessage = response.candidates[0].content.parts[0].text.replace(/\*/g, '').trim();
       
-      console.log(`🤖 Mensagem de boas-vindas [${callSid}]: ${welcomeMessage}`);
+      console.log(`🤖 Mensagem de boas-vindas: ${welcomeMessage}`);
       
       return welcomeMessage;
       
     } catch (error) {
       console.error(`❌ Erro gerando mensagem de boas-vindas [${callSid}]:`, error);
-      return userName ? `Olá ${userName}! Como posso te ajudar?` : "Olá! Como posso te ajudar hoje?";
+      return "Olá! Como posso te ajudar hoje?";
     }
   }
 
-  // 🔥 NOVO: Mensagem de verificação de presença
-  async generatePresenceCheck(callSid) {
+  async generateResponse(callSid, userMessage) {
     try {
-      const userName = this.userNames.get(callSid);
-      const prompt = userName
-        ? `Crie uma mensagem para verificar se a pessoa ainda está na ligação, de forma natural e educada.
-
-Nome da pessoa: ${userName}
-
-Regras:
-- Use o nome da pessoa
-- 1 frase curta apenas
-- Seja educado e natural
-- Não use emojis
-- Exemplo: "Maria, você ainda está na linha?"
-
-Sua mensagem:`
-        : `Crie uma mensagem para verificar se a pessoa ainda está na ligação, de forma natural e educada.
-
-Regras:
-- 1 frase curta apenas
-- Seja educado e natural
-- Não use emojis
-- Exemplo: "Você ainda está na linha?"
-
-Sua mensagem:`;
-
-      console.log(`🔍 Gerando verificação de presença para [${callSid}] | Nome: ${userName || 'Não informado'}`);
-      
-      const result = await generativeModel.generateContent(prompt);
-      const response = result.response;
-      const presenceMessage = response.candidates[0].content.parts[0].text.replace(/\*/g, '').trim();
-      
-      console.log(`🤖 Verificação de presença [${callSid}]: ${presenceMessage}`);
-      
-      return presenceMessage;
-      
-    } catch (error) {
-      console.error(`❌ Erro gerando verificação de presença [${callSid}]:`, error);
-      return "Você ainda está na linha?";
-    }
-  }
-
-  // 🔥 ATUALIZADO: Agora aceita múltiplas mensagens para conversa fluida
-  async generateResponse(callSid, userMessages) {
-    try {
-      // Se for array, junta as mensagens
-      const userMessage = Array.isArray(userMessages) 
-        ? userMessages.join(" ") 
-        : userMessages;
-      
       const history = this.getConversationHistory(callSid);
       const issue = this.userIssues.get(callSid);
-      const userName = this.userNames.get(callSid);
       
-      const recentHistory = history.slice(-4); // 🔥 Mantém mais histórico
+      const recentHistory = history.slice(-3);
       
-      const prompt = this.buildPrompt(userMessage, recentHistory, issue, userName);
+      const prompt = this.buildPrompt(userMessage, recentHistory, issue);
       
-      console.log(`🧠 Gemini [${callSid}]: Processando "${userMessage.substring(0, 80)}..." | Histórico: ${recentHistory.length} mensagens`);
+      console.log(`🧠 Gemini [${callSid}]: "${userMessage.substring(0, 50)}..."`);
       
       const result = await generativeModel.generateContent(prompt);
       const response = result.response;
@@ -422,16 +330,9 @@ Sua mensagem:`;
         throw new Error('Resposta muito curta do Gemini');
       }
       
-      // 🔥 ATUALIZADO: Adiciona todas as mensagens ao histórico
-      if (Array.isArray(userMessages)) {
-        userMessages.forEach(msg => {
-          this.updateConversationHistory(callSid, msg, text);
-        });
-      } else {
-        this.updateConversationHistory(callSid, userMessage, text);
-      }
+      this.updateConversationHistory(callSid, userMessage, text);
       
-      console.log(`🤖 Resposta Gemini [${callSid}]: "${text.substring(0, 80)}..."`);
+      console.log(`🤖 Resposta [${callSid}]: "${text.substring(0, 50)}..."`);
       
       return text;
       
@@ -449,21 +350,17 @@ Sua mensagem:`;
     }
   }
 
-  buildPrompt(userMessage, history, issue, userName) {
+  buildPrompt(userMessage, history, issue) {
     let prompt = `Você é um assistente em chamada telefônica. Responda em português brasileiro.
 
-PROBLEMA INICIAL: ${issue}
-${userName ? `NOME DO USUÁRIO: ${userName}` : ''}
+PROBLEMA: ${issue}
 
 Regras:
 - 1-2 frases no máximo
-- Linguagem natural de conversa
-- Foco no contexto da conversa
-- ${userName ? `Use o nome "${userName}" quando apropriado` : ''}
-- Nunca Use Emojis
-- Mantenha a conversa fluida
+- Linguagem natural
+- Foco no problema acima
 
-Histórico recente:`;
+Histórico:`;
 
     if (history.length > 0) {
       history.forEach(([user, assistant]) => {
@@ -473,7 +370,7 @@ Histórico recente:`;
     }
 
     prompt += `\n\nUsuário: ${userMessage}`;
-    prompt += `\n\nSua resposta (curta e natural, mantendo o fluxo):`;
+    prompt += `\n\nSua resposta (curta, sobre "${issue}"):`;
 
     return prompt;
   }
@@ -494,18 +391,12 @@ Histórico recente:`;
     }
     
     this.conversationHistory.set(callSid, history);
-    console.log(`📝 Histórico atualizado [${callSid}]: ${history.length} mensagens`);
-  }
-
-  getUserName(callSid) {
-    return this.userNames.get(callSid);
   }
 
   cleanup(callSid) {
     this.conversationHistory.delete(callSid);
     this.userIssues.delete(callSid);
-    this.userNames.delete(callSid);
-    console.log(`🧹 Histórico completamente limpo para [${callSid}]`);
+    console.log(`🧹 Histórico limpo para [${callSid}]`);
   }
 }
 
@@ -529,14 +420,13 @@ const sttConfig = {
 };
 
 // =============================
-// 🎙️ Audio Stream Session (ATUALIZADO PARA CONVERSA FLUIDA)
+// 🎙️ Audio Stream Session
 // =============================
 class AudioStreamSession {
-  constructor(ws, callSid, issue = null, userName = null) {
+  constructor(ws, callSid, issue = null) {
     this.ws = ws;
     this.callSid = callSid;
     this.issue = issue;
-    this.userName = userName;
     this.sttStream = null;
     this.isActive = false;
     this.lastFinalTranscript = "";
@@ -545,20 +435,7 @@ class AudioStreamSession {
     this.maxConsecutiveErrors = 3;
     this.healthCheckInterval = null;
     
-    // 🔥 ATUALIZADO: Buffer para mensagens sequenciais
-    this.messageBuffer = [];
-    this.bufferTimeout = null;
-    this.bufferDelay = 1200; // 1.2 segundos para agrupar mensagens
-    
-    // Controle de inatividade
-    this.lastActivity = Date.now();
-    this.inactivityTimeout = 5 * 60 * 1000;
-    this.presenceCheckSent = false;
-    
-    // 🔥 REMOVIDO: Sistema de interrupção complexo
-    this.isInterrupting = false;
-    
-    console.log(`🎧 Nova sessão: ${callSid} | Issue: ${issue} | Nome: ${userName || 'Não informado'}`);
+    console.log(`🎧 Nova sessão: ${callSid}, Issue: ${issue}`);
     this.setupSTT();
     this.startHealthCheck();
   }
@@ -581,7 +458,6 @@ class AudioStreamSession {
 
       this.isActive = true;
       this.consecutiveErrors = 0;
-      console.log(`✅ STT configurado para [${this.callSid}]`);
       
     } catch (error) {
       console.error(`❌ Erro criando stream STT [${this.callSid}]:`, error);
@@ -591,40 +467,11 @@ class AudioStreamSession {
 
   startHealthCheck() {
     this.healthCheckInterval = setInterval(() => {
-      const now = Date.now();
-      const timeSinceLastActivity = now - this.lastActivity;
-      
-      // Verifica inatividade
-      if (timeSinceLastActivity > this.inactivityTimeout && !this.presenceCheckSent) {
-        console.log(`⏰ Usuário inativo por ${Math.round(timeSinceLastActivity/1000)}s [${this.callSid}], enviando verificação...`);
-        this.sendPresenceCheck();
-        this.presenceCheckSent = true;
-      }
-      
-      // Verifica erros consecutivos
       if (this.consecutiveErrors >= this.maxConsecutiveErrors) {
         console.log(`🚑 Health check: Muitos erros consecutivos [${this.callSid}], reiniciando STT...`);
         this.restartSTT();
       }
     }, 10000);
-  }
-
-  async sendPresenceCheck() {
-    try {
-      const presenceMessage = await geminiService.generatePresenceCheck(this.callSid);
-      if (presenceMessage) {
-        console.log(`🔍 Enviando verificação de presença para [${this.callSid}]: "${presenceMessage}"`);
-        responseQueue.addResponse(this.callSid, presenceMessage);
-      }
-    } catch (error) {
-      console.error(`❌ Erro enviando verificação de presença [${this.callSid}]:`, error);
-    }
-  }
-
-  updateActivity() {
-    this.lastActivity = Date.now();
-    this.presenceCheckSent = false;
-    console.log(`🔄 Atividade atualizada [${this.callSid}] - ${new Date().toISOString()}`);
   }
 
   restartSTT() {
@@ -640,7 +487,12 @@ class AudioStreamSession {
     this.setupSTT();
   }
 
-  // 🔥 ATUALIZADO COMPLETAMENTE: Sistema de buffer para mensagens sequenciais
+  checkHealth() {
+    if (this.consecutiveErrors >= this.maxConsecutiveErrors) {
+      this.restartSTT();
+    }
+  }
+
   async handleSTTData(data) {
     try {
       if (data.results && data.results[0]) {
@@ -651,21 +503,18 @@ class AudioStreamSession {
         if (!transcript) return;
 
         this.consecutiveErrors = 0;
-        this.updateActivity();
 
         if (isFinal) {
-          console.log(`📝 [FINAL] ${this.callSid}: "${transcript}"`);
+          console.log(`📝 [FINAL] ${this.callSid}: ${transcript}`);
           
           if (transcript !== this.lastFinalTranscript && transcript.length > 2) {
             this.lastFinalTranscript = transcript;
-            
-            // 🔥 NOVO: Adiciona ao buffer e agenda processamento
-            this.addToBuffer(transcript);
+            await this.processWithGemini(transcript);
           }
           
         } else {
           if (transcript.length > 8) {
-            console.log(`🎯 [INTERIM] ${this.callSid}: "${transcript}"`);
+            console.log(`🎯 [INTERIM] ${this.callSid}: ${transcript}`);
           }
         }
       }
@@ -676,81 +525,19 @@ class AudioStreamSession {
     }
   }
 
-  // 🔥 NOVO: Sistema de buffer para agrupar mensagens sequenciais
-  addToBuffer(transcript) {
-    // Limpa timeout anterior
-    if (this.bufferTimeout) {
-      clearTimeout(this.bufferTimeout);
-    }
-    
-    // Adiciona mensagem ao buffer
-    this.messageBuffer.push(transcript);
-    console.log(`📦 Buffer [${this.callSid}]: Adicionada "${transcript}" | Total: ${this.messageBuffer.length}`);
-    
-    // Agenda processamento do buffer
-    this.bufferTimeout = setTimeout(() => {
-      this.processBuffer();
-    }, this.bufferDelay);
-  }
-
-  // 🔥 NOVO: Processa todas as mensagens do buffer de uma vez
-  async processBuffer() {
-    if (this.messageBuffer.length === 0) return;
-    
-    const messagesToProcess = [...this.messageBuffer];
-    this.messageBuffer = []; // Limpa o buffer
-    this.bufferTimeout = null;
-    
-    console.log(`🎯 Processando buffer [${this.callSid}]: ${messagesToProcess.length} mensagens`);
-    messagesToProcess.forEach((msg, i) => {
-      console.log(`   ${i + 1}. "${msg}"`);
-    });
-    
-    // Se a IA estiver falando, interrompe para processar as novas mensagens
-    if (responseQueue.isSpeaking(this.callSid)) {
-      console.log(`🔄 Interrompendo fala atual para processar ${messagesToProcess.length} mensagens [${this.callSid}]`);
-      responseQueue.interruptAndClear(this.callSid);
-      
-      // Pequeno delay para garantir interrupção
-      await new Promise(resolve => setTimeout(resolve, 500));
-    }
-    
-    // Processa todas as mensagens juntas
-    await this.processWithGemini(messagesToProcess);
-  }
-
-  // 🔥 ATUALIZADO: Aceita array de mensagens
-  async processWithGemini(messages) {
+  async processWithGemini(transcript) {
     if (this.geminiProcessing) {
-      console.log(`⏳ Gemini ocupado [${this.callSid}], aguardando...`);
-      
-      // Aguarda até 5 segundos
-      let attempts = 0;
-      const maxAttempts = 5;
-      
-      while (this.geminiProcessing && attempts < maxAttempts) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        attempts++;
-        console.log(`⏳ Tentativa ${attempts}/${maxAttempts} para [${this.callSid}]...`);
-      }
-      
-      if (this.geminiProcessing) {
-        console.log(`🚫 Gemini ainda ocupado após ${maxAttempts} tentativas [${this.callSid}], ignorando mensagens`);
-        return;
-      }
+      console.log(`⏳ Gemini ocupado [${this.callSid}], ignorando: ${transcript}`);
+      return;
     }
 
     this.geminiProcessing = true;
 
     try {
-      const messageText = Array.isArray(messages) ? messages : [messages];
-      console.log(`🧠 Processando ${messageText.length} mensagens com Gemini [${this.callSid}]`);
-      
-      const geminiResponse = await geminiService.generateResponse(this.callSid, messageText);
+      const geminiResponse = await geminiService.generateResponse(this.callSid, transcript);
       
       if (geminiResponse && geminiResponse.length > 2) {
         responseQueue.addResponse(this.callSid, geminiResponse);
-        console.log(`✅ Resposta Gemini adicionada à fila [${this.callSid}]: "${geminiResponse.substring(0, 80)}..."`);
       } else {
         console.log(`⚠️ Resposta Gemini vazia para [${this.callSid}]`);
       }
@@ -761,13 +548,6 @@ class AudioStreamSession {
       
     } finally {
       this.geminiProcessing = false;
-      console.log(`✅ Gemini liberado para [${this.callSid}]`);
-    }
-  }
-
-  checkHealth() {
-    if (this.consecutiveErrors >= this.maxConsecutiveErrors) {
-      this.restartSTT();
     }
   }
 
@@ -787,28 +567,20 @@ class AudioStreamSession {
   cleanup() {
     this.isActive = false;
     
-    // Limpa buffer timeout
-    if (this.bufferTimeout) {
-      clearTimeout(this.bufferTimeout);
-      this.bufferTimeout = null;
-    }
-    
     if (this.healthCheckInterval) {
       clearInterval(this.healthCheckInterval);
-      console.log(`⏹️ Health check parado para [${this.callSid}]`);
     }
     
     if (this.sttStream) {
       this.sttStream.removeAllListeners();
       this.sttStream.destroy();
       this.sttStream = null;
-      console.log(`🔚 STT finalizado para [${this.callSid}]`);
     }
 
     geminiService.cleanup(this.callSid);
     responseQueue.cleanup(this.callSid);
     
-    console.log(`🔚 Sessão completamente finalizada [${this.callSid}]`);
+    console.log(`🔚 Sessão finalizada [${this.callSid}]`);
   }
 }
 
@@ -822,15 +594,10 @@ const wss = new WebSocketServer({
 
 const activeSessions = new Map();
 const pendingIssues = new Map();
-const pendingUserNames = new Map();
-
-// 🔥 NOVO: Controle de sessões sendo limpas
-const cleaningSessions = new Set();
 
 wss.on("connection", (ws, req) => {
-  console.log("🎧 Nova conexão WebSocket estabelecida");
+  console.log("🎧 Nova conexão WebSocket");
   let session = null;
-  let callSid = null;
 
   const heartbeatInterval = setInterval(() => {
     if (ws.readyState === WebSocket.OPEN) {
@@ -846,33 +613,30 @@ wss.on("connection", (ws, req) => {
         case "start":
           console.log("🚀 Iniciando stream:", data.start.callSid);
           
-          callSid = data.start.callSid;
+          const callSid = data.start.callSid;
           const issue = pendingIssues.get(callSid);
-          const userName = pendingUserNames.get(callSid);
           
           if (activeSessions.has(callSid)) {
             session = activeSessions.get(callSid);
             session.ws = ws;
             console.log(`🔗 WebSocket reconectado para [${callSid}]`);
           } else {
-            session = new AudioStreamSession(ws, callSid, issue, userName);
+            session = new AudioStreamSession(ws, callSid, issue);
             activeSessions.set(callSid, session);
             
             if (issue) {
-              geminiService.generateWelcomeMessage(callSid, issue, userName)
+              geminiService.generateWelcomeMessage(callSid, issue)
                 .then(welcomeMessage => {
-                  console.log(`👋 Enviando mensagem de boas-vindas para [${callSid}]: "${welcomeMessage}"`);
                   responseQueue.addResponse(callSid, welcomeMessage);
                 })
                 .catch(error => {
                   console.error(`❌ Erro welcome message [${callSid}]:`, error);
-                  responseQueue.addResponse(callSid, userName ? `Olá ${userName}! Como posso te ajudar?` : "Olá! Como posso te ajudar?");
+                  responseQueue.addResponse(callSid, "Olá! Como posso te ajudar?");
                 });
             }
           }
           
           pendingIssues.delete(callSid);
-          pendingUserNames.delete(callSid);
           break;
 
         case "media":
@@ -883,24 +647,9 @@ wss.on("connection", (ws, req) => {
 
         case "stop":
           console.log("🛑 Parando stream:", data.stop.callSid);
-          const stopCallSid = data.stop.callSid;
-          
-          // Previne limpeza duplicada
-          if (!cleaningSessions.has(stopCallSid)) {
-            cleaningSessions.add(stopCallSid);
-            
-            if (activeSessions.has(stopCallSid)) {
-              const stopSession = activeSessions.get(stopCallSid);
-              stopSession.cleanup();
-              activeSessions.delete(stopCallSid);
-            }
-            
-            // Remove da lista de limpeza após um tempo
-            setTimeout(() => {
-              cleaningSessions.delete(stopCallSid);
-            }, 5000);
-          } else {
-            console.log(`⚠️ Sessão [${stopCallSid}] já está sendo limpa, ignorando...`);
+          if (session) {
+            session.cleanup();
+            activeSessions.delete(data.stop.callSid);
           }
           break;
       }
@@ -910,12 +659,12 @@ wss.on("connection", (ws, req) => {
   });
 
   ws.on("close", () => {
-    console.log(`🔌 WebSocket fechado para [${callSid || 'sessão desconhecida'}]`);
+    console.log("🔌 WebSocket fechado");
     clearInterval(heartbeatInterval);
   });
 
   ws.on("error", (error) => {
-    console.error(`❌ Erro WebSocket [${callSid || 'sessão desconhecida'}]:`, error);
+    console.error("❌ Erro WebSocket:", error);
     clearInterval(heartbeatInterval);
   });
 
@@ -956,26 +705,32 @@ app.post("/twiml", (req, res) => {
 app.post("/make-call", async (req, res) => {
   let to = req.body.to;
   const issue = req.body.issue || "Preciso de ajuda com um problema";
-  const userName = req.body.userName;
 
   if (!to) {
     return res.status(400).json({ error: "Número é obrigatório" });
   }
 
   try {
-    to = to.trim().replace(/\s/g, "");
+    // 🔥 CORREÇÃO: Garantir que o número sempre tenha código 55
+    to = to.trim().replace(/\s/g, ""); // Remove espaços
     
+    // Se não começar com +55, adiciona o código do Brasil
     if (!to.startsWith("+55")) {
+      // Se começar com + mas não for +55, substitui
       if (to.startsWith("+")) {
         to = "+55" + to.substring(1);
-      } else if (to.startsWith("55")) {
+      } 
+      // Se não tiver +, mas tiver 55 no início, adiciona o +
+      else if (to.startsWith("55")) {
         to = "+" + to;
-      } else {
+      }
+      // Se não tiver nada disso, adiciona +55
+      else {
         to = "+55" + to;
       }
     }
 
-    console.log(`📞 Número formatado: ${to} | Nome: ${userName || 'Não informado'} | Issue: ${issue}`);
+    console.log(`📞 Número formatado: ${to}`);
 
     const call = await client.calls.create({
       to: to,
@@ -986,27 +741,22 @@ app.post("/make-call", async (req, res) => {
       statusCallbackEvent: ["answered", "completed"],
     });
 
-    console.log(`✅ Chamada com Gemini + Google TTS iniciada: ${call.sid}`);
+    console.log(`✅ Chamada com Gemini + Google TTS iniciada: ${call.sid}, Issue: ${issue}`);
     
     pendingIssues.set(call.sid, issue);
-    if (userName) {
-      pendingUserNames.set(call.sid, userName);
-    }
     
     res.json({ 
       message: "Chamada com IA e voz natural iniciada", 
       sid: call.sid,
       issue: issue,
-      userName: userName,
-      numero_formatado: to,
-      features: ["STT", "Gemini AI", "Google TTS", "Voz natural", "Conversa fluida", "Buffer de mensagens"]
+      numero_formatado: to, // 🔥 MOSTRA O NÚMERO FORMATADO
+      features: ["STT", "Gemini AI", "Google TTS", "Voz natural"]
     });
   } catch (error) {
     console.error("❌ Erro criando chamada:", error);
     res.status(500).json({ error: error.message });
   }
 });
-
 // =============================
 // 🌐 Webhooks e Monitoramento
 // =============================
@@ -1020,29 +770,13 @@ app.post("/call-status", (req, res) => {
   const { CallSid, CallStatus } = req.body;
   console.log(`📞 Status [${CallStatus}]: ${CallSid}`);
   
-  if (['completed', 'failed', 'busy', 'no-answer'].includes(CallStatus)) {
-    if (!cleaningSessions.has(CallSid)) {
-      cleaningSessions.add(CallSid);
-      
-      console.log(`🧹 Iniciando limpeza final para [${CallSid}]...`);
-      
-      if (activeSessions.has(CallSid)) {
-        const session = activeSessions.get(CallSid);
-        session.cleanup();
-        activeSessions.delete(CallSid);
-        console.log(`✅ Sessão ativa removida [${CallSid}]`);
-      }
-      
-      pendingIssues.delete(CallSid);
-      pendingUserNames.delete(CallSid);
-      
-      setTimeout(() => {
-        cleaningSessions.delete(CallSid);
-        console.log(`🗑️ Limpeza finalizada para [${CallSid}]`);
-      }, 3000);
-    } else {
-      console.log(`⚠️ Sessão [${CallSid}] já está sendo limpa, ignorando call-status...`);
+  if (['completed', 'failed', 'busy'].includes(CallStatus)) {
+    if (activeSessions.has(CallSid)) {
+      const session = activeSessions.get(CallSid);
+      session.cleanup();
+      activeSessions.delete(CallSid);
     }
+    pendingIssues.delete(CallSid);
   }
   
   res.status(200).send("OK");
@@ -1054,8 +788,7 @@ app.get("/health", (req, res) => {
     timestamp: new Date().toISOString(),
     active_sessions: activeSessions.size,
     pending_issues: pendingIssues.size,
-    pending_names: pendingUserNames.size,
-    features: ["STT", "Gemini AI", "Google TTS", "Voz natural premium", "Conversa fluida", "Buffer de mensagens"]
+    features: ["STT", "Gemini AI", "Google TTS", "Voz natural premium"]
   });
 });
 
@@ -1086,12 +819,11 @@ app.get("/", (req, res) => {
         <div class="container">
           <h1>SafeCall AI</h1>
           
+          
           <div class="card">
             <h3>Fazer Chamada de Voz</h3>
             <form action="/make-call" method="POST">
               <input type="tel" name="to" placeholder="21994442087" value="21994442087" required>
-              
-              <input type="text" name="userName" placeholder="Nome da pessoa (opcional)" value="Maria">
 
               <div class="issues-grid">
                 <div class="issue-card" onclick="selectIssue('Preciso de ajuda para configurar meu e-mail no celular')">
@@ -1123,17 +855,7 @@ Preciso de ajuda para configurar meu email no celular
             <h3>Status do Sistema</h3>
             <p>Sessões ativas: <strong>${activeSessions.size}</strong></p>
             <p>Issues pendentes: <strong>${pendingIssues.size}</strong></p>
-            <p>Nomes pendentes: <strong>${pendingUserNames.size}</strong></p>
             <a href="/health">Ver Health Check</a>
-          </div>
-
-          <div class="card">
-            <h3>Novas Funcionalidades</h3>
-            <div class="feature">✅ Nome personalizado nas saudações</div>
-            <div class="feature">✅ Verificação de presença após 5 minutos</div>
-            <div class="feature">✅ Conversa fluida com buffer de mensagens</div>
-            <div class="feature">✅ Agrupamento de mensagens sequenciais</div>
-            <div class="feature">✅ Logs detalhados para debug</div>
           </div>
         </div>
       </body>
@@ -1151,8 +873,6 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🔊 Google TTS: ${ttsConfig.voice.name}`);
   console.log(`📁 Áudios servidos em: ${baseUrl}/audio/`);
   console.log(`🔗 Health: http://localhost:${PORT}/health`);
-  console.log(`🔄 Buffer de mensagens: ${1200}ms`);
-  console.log(`🎯 Conversa fluida: ATIVADA`);
 });
 
 server.on("upgrade", (req, socket, head) => {
@@ -1170,6 +890,5 @@ process.on("SIGTERM", () => {
   activeSessions.forEach(session => session.cleanup());
   activeSessions.clear();
   pendingIssues.clear();
-  pendingUserNames.clear();
   server.close(() => process.exit(0));
 });
