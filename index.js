@@ -4,11 +4,15 @@ import WebSocket, { WebSocketServer } from "ws";
 import speech from "@google-cloud/speech";
 import textToSpeech from "@google-cloud/text-to-speech";
 import { VertexAI } from '@google-cloud/vertexai';
-import { PassThrough } from 'stream';
+import { writeFileSync, unlinkSync, existsSync, mkdirSync } from 'fs';
+import { join } from 'path';
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+
+// 🔥 NOVO: Servir arquivos de áudio estáticos
+app.use('/audio', express.static('audio'));
 
 const accountSid = process.env.TWILIO_ACCOUNT_SID;
 const authToken = process.env.TWILIO_AUTH_TOKEN;
@@ -17,7 +21,13 @@ const baseUrl = process.env.BASE_URL;
 
 const client = twilio(accountSid, authToken);
 const clientSTT = new speech.SpeechClient();
-const clientTTS = new textToSpeech.TextToSpeechClient(); // 🔥 NOVO: Google TTS
+const clientTTS = new textToSpeech.TextToSpeechClient();
+
+// 🔥 NOVO: Criar diretório para áudios
+const audioDir = join(process.cwd(), 'audio');
+if (!existsSync(audioDir)) {
+  mkdirSync(audioDir, { recursive: true });
+}
 
 // =============================
 // 🧠 Configuração Vertex AI Gemini
@@ -38,16 +48,16 @@ const generativeModel = vertex_ai.getGenerativeModel({
 });
 
 // =============================
-// 🎙️ Configuração Google TTS
+// 🎙️ Configuração Google TTS (OTIMIZADA)
 // =============================
 const ttsConfig = {
   voice: {
     languageCode: 'pt-BR',
-    name: 'pt-BR-Wavenet-B', // 🔥 Voz premium em português
+    name: 'pt-BR-Wavenet-B',
     ssmlGender: 'MALE'
   },
   audioConfig: {
-    audioEncoding: 'MULAW', // 🔥 Compatível com Twilio
+    audioEncoding: 'MP3', // 🔥 MUDADO para MP3 (menor tamanho)
     sampleRateHertz: 8000,
     speakingRate: 1.0,
     pitch: 0.0,
@@ -55,30 +65,22 @@ const ttsConfig = {
   }
 };
 
-// 🔥 VOZES DISPONÍVEIS PARA PT-BR
-const availableVoices = [
-  'pt-BR-Wavenet-A', // Feminina
-  'pt-BR-Wavenet-B', // Masculina (padrão)
-  'pt-BR-Wavenet-C', // Feminina
-  'pt-BR-Wavenet-D', // Masculina
-  'pt-BR-Standard-A', // Feminina (standard)
-  'pt-BR-Standard-B'  // Masculina (standard)
-];
-
 // =============================
-// 🎯 Sistema de Fila para Respostas (MODIFICADO PARA TTS)
+// 🎯 Sistema de Fila para Respostas (CORRIGIDO)
 // =============================
 class ResponseQueue {
   constructor() {
     this.queue = new Map();
     this.processingDelay = 2000;
     this.maxRetries = 3;
+    this.audioFileCleanup = new Map(); // callSid -> [audioFiles]
   }
 
   addResponse(callSid, responseText) {
     try {
       if (!this.queue.has(callSid)) {
         this.queue.set(callSid, { responses: [], isProcessing: false, retryCount: 0 });
+        this.audioFileCleanup.set(callSid, []);
       }
       
       const callQueue = this.queue.get(callSid);
@@ -115,11 +117,11 @@ class ResponseQueue {
     try {
       console.log(`🎯 Processando TTS para [${callSid}]: "${response.text}"`);
       
-      // 🔥 GERA ÁUDIO COM GOOGLE TTS
-      const audioBuffer = await this.generateTTS(response.text);
+      // 🔥 CORREÇÃO: Gera arquivo de áudio e hospeda externamente
+      const audioUrl = await this.generateAndHostTTS(callSid, response.text);
       
-      // 🔥 ENVIA ÁUDIO VIA TWIML PLAY
-      await this.updateCallWithAudio(callSid, audioBuffer);
+      // Envia via TwiML com URL externa
+      await this.updateCallWithAudioURL(callSid, audioUrl);
       
       // Remove da fila após sucesso
       callQueue.responses.shift();
@@ -137,7 +139,6 @@ class ResponseQueue {
     } catch (error) {
       console.error(`❌ Erro processando TTS [${callSid}]:`, error);
       
-      // Mecanismo de retry
       response.retries += 1;
       if (response.retries >= this.maxRetries) {
         console.error(`🚫 Máximo de retries TTS para [${callSid}], removendo: ${response.text}`);
@@ -146,7 +147,6 @@ class ResponseQueue {
       
       callQueue.isProcessing = false;
       
-      // Tenta novamente após delay
       if (callQueue.responses.length > 0) {
         const retryDelay = Math.min(5000 * response.retries, 30000);
         console.log(`🔄 Retentando TTS em ${retryDelay}ms...`);
@@ -155,16 +155,19 @@ class ResponseQueue {
     }
   }
 
-  // 🔥 NOVO: Gera áudio usando Google TTS
-  async generateTTS(text) {
+  // 🔥 CORREÇÃO: Gera arquivo MP3 e retorna URL pública
+  async generateAndHostTTS(callSid, text) {
     try {
       const request = {
         input: { text: text },
         voice: ttsConfig.voice,
-        audioConfig: ttsConfig.audioConfig
+        audioConfig: {
+          ...ttsConfig.audioConfig,
+          audioEncoding: 'MP3' // Sempre MP3 para menor tamanho
+        }
       };
 
-      console.log(`🔊 Gerando TTS: "${text.substring(0, 50)}..."`);
+      console.log(`🔊 Gerando TTS MP3: "${text.substring(0, 50)}..."`);
       
       const [response] = await clientTTS.synthesizeSpeech(request);
       
@@ -172,23 +175,35 @@ class ResponseQueue {
         throw new Error('Resposta de TTS vazia');
       }
       
-      console.log(`✅ TTS gerado: ${response.audioContent.length} bytes`);
-      return response.audioContent;
+      // 🔥 SALVA COMO ARQUIVO MP3
+      const filename = `tts_${callSid}_${Date.now()}.mp3`;
+      const filepath = join(audioDir, filename);
+      
+      writeFileSync(filepath, response.audioContent, 'binary');
+      
+      // Registra arquivo para limpeza posterior
+      if (this.audioFileCleanup.has(callSid)) {
+        this.audioFileCleanup.get(callSid).push(filepath);
+      }
+      
+      const audioUrl = `${baseUrl}/audio/${filename}`;
+      console.log(`✅ TTS salvo: ${filename} (${response.audioContent.length} bytes)`);
+      
+      return audioUrl;
       
     } catch (error) {
-      console.error('❌ Erro gerando TTS:', error);
+      console.error('❌ Erro gerando/hospedando TTS:', error);
       throw error;
     }
   }
 
-  // 🔥 MODIFICADO: Usa <Play> com áudio TTS em vez de <Say>
-  async updateCallWithAudio(callSid, audioBuffer) {
+  // 🔥 CORREÇÃO: Usa URL externa em vez de base64
+  async updateCallWithAudioURL(callSid, audioUrl) {
     try {
       const twiml = new twilio.twiml.VoiceResponse();
       
-      // 🔥 CONVERTE ÁUDIO PARA BASE64 E USA <PLAY>
-      const audioBase64 = audioBuffer.toString('base64');
-      twiml.play({}, `data:audio/mulaw;base64,${audioBase64}`);
+      // 🔥 USA URL EXTERNA - não tem limite de tamanho!
+      twiml.play({}, audioUrl);
       
       // Mantém o stream aberto
       const start = twiml.start();
@@ -199,12 +214,19 @@ class ResponseQueue {
       
       twiml.pause({ length: 120 });
 
+      const twimlString = twiml.toString();
+      console.log(`📊 TwiML size: ${twimlString.length} chars (limite: 4000)`);
+      
+      if (twimlString.length > 4000) {
+        throw new Error(`TwiML muito grande: ${twimlString.length} caracteres`);
+      }
+
       await client.calls(callSid)
         .update({
-          twiml: twiml.toString()
+          twiml: twimlString
         });
 
-      console.log(`✅ Áudio TTS enviado para [${callSid}]`);
+      console.log(`✅ Áudio TTS enviado via URL para [${callSid}]`);
       
     } catch (error) {
       console.error(`❌ Erro enviando áudio TTS [${callSid}]:`, error);
@@ -218,7 +240,24 @@ class ResponseQueue {
     }
   }
 
+  // 🔥 NOVO: Limpa arquivos de áudio
   cleanup(callSid) {
+    // Remove arquivos de áudio
+    if (this.audioFileCleanup.has(callSid)) {
+      const audioFiles = this.audioFileCleanup.get(callSid);
+      audioFiles.forEach(filepath => {
+        try {
+          if (existsSync(filepath)) {
+            unlinkSync(filepath);
+            console.log(`🗑️ Arquivo de áudio removido: ${filepath}`);
+          }
+        } catch (error) {
+          console.error(`❌ Erro removendo arquivo ${filepath}:`, error);
+        }
+      });
+      this.audioFileCleanup.delete(callSid);
+    }
+    
     this.queue.delete(callSid);
     console.log(`🧹 Fila TTS limpa para [${callSid}]`);
   }
@@ -227,7 +266,7 @@ class ResponseQueue {
 const responseQueue = new ResponseQueue();
 
 // =============================
-// 🧠 Gemini Service (MELHORADO)
+// 🧠 Gemini Service (MANTIDO)
 // =============================
 class GeminiService {
   constructor() {
@@ -641,7 +680,6 @@ app.post("/twiml", (req, res) => {
   try {
     const response = new twilio.twiml.VoiceResponse();
 
-    // Mensagem inicial genérica (será substituída pelo TTS personalizado)
     response.say({ 
       voice: "alice", 
       language: "pt-BR" 
@@ -733,7 +771,6 @@ app.get("/health", (req, res) => {
   });
 });
 
-// 🔥 ATUALIZADO: Interface mostra uso do Google TTS
 app.get("/", (req, res) => {
   res.send(`
     <html>
@@ -786,6 +823,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Servidor com Gemini + Google TTS iniciado na porta ${PORT}`);
   console.log(`🤖 Gemini Model: ${model}`);
   console.log(`🔊 Google TTS: ${ttsConfig.voice.name}`);
+  console.log(`📁 Áudios servidos em: ${baseUrl}/audio/`);
   console.log(`🔗 Health: http://localhost:${PORT}/health`);
 });
 
