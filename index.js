@@ -53,8 +53,8 @@ const generativeModel = vertex_ai.getGenerativeModel({
 const ttsConfig = {
   voice: {
     languageCode: 'pt-BR',
-    name: 'pt-BR-Wavenet-B',
-    ssmlGender: 'MALE'
+    name: "pt-BR-Chirp3-HD-Leda",
+    ssmlGender: 'FEMALE'
   },
   audioConfig: {
     audioEncoding: 'MP3', // 🔥 MUDADO para MP3 (menor tamanho)
