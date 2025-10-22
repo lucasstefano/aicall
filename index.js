@@ -15,10 +15,7 @@ const clientSTT = new speech.SpeechClient();
 // =============================
 // 🧠 Configuração Vertex AI Gemini
 // =============================
-const vertex_ai = new VertexAI({
-  project: process.env.GCLOUD_PROJECT,
-  location: process.env.GCLOUD_LOCATION,
-});
+const vertex_ai = new VertexAI();
 
 const model = 'gemini-2.0-flash-001';
 const generativeModel = vertex_ai.getGenerativeModel({
