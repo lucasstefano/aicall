@@ -11,7 +11,7 @@ const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-// 🔥 NOVO: Servir arquivos de áudio estáticos
+// 🔥 Servir arquivos de áudio estáticos
 app.use('/audio', express.static('audio'));
 
 const accountSid = process.env.TWILIO_ACCOUNT_SID;
@@ -19,7 +19,7 @@ const authToken = process.env.TWILIO_AUTH_TOKEN;
 const fromNumber = process.env.TWILIO_PHONE_NUMBER;
 const baseUrl = process.env.BASE_URL;
 
-// 🔥 VALIDAÇÃO DE VARIÁVEIS DE AMBIENTE
+// Validação de variáveis de ambiente
 const requiredEnvVars = [
   'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_PHONE_NUMBER',
   'BASE_URL', 'GCLOUD_PROJECT', 'GCLOUD_LOCATION'
@@ -36,7 +36,7 @@ const client = twilio(accountSid, authToken);
 const clientSTT = new speech.SpeechClient();
 const clientTTS = new textToSpeech.TextToSpeechClient();
 
-// 🔥 NOVO: Criar diretório para áudios
+// Criar diretório para áudios
 const audioDir = join(process.cwd(), 'audio');
 if (!existsSync(audioDir)) {
   mkdirSync(audioDir, { recursive: true });
@@ -61,7 +61,7 @@ const generativeModel = vertex_ai.getGenerativeModel({
 });
 
 // =============================
-// 🎙️ Configuração Google TTS (OTIMIZADA)
+// 🎙️ Configuração Google TTS
 // =============================
 const ttsConfig = {
   voice: {
@@ -70,7 +70,7 @@ const ttsConfig = {
     ssmlGender: 'FEMALE'
   },
   audioConfig: {
-    audioEncoding: 'MP3', // 🔥 MUDADO para MP3 (menor tamanho)
+    audioEncoding: 'MP3',
     sampleRateHertz: 8000,
     speakingRate: 1.0,
     pitch: 0.0,
@@ -79,14 +79,14 @@ const ttsConfig = {
 };
 
 // =============================
-// 🎯 Sistema de Fila para Respostas (CORRIGIDO)
+// 🎯 Sistema de Fila para Respostas
 // =============================
 class ResponseQueue {
   constructor() {
     this.queue = new Map();
     this.processingDelay = 2000;
     this.maxRetries = 3;
-    this.audioFileCleanup = new Map(); // callSid -> [audioFiles]
+    this.audioFileCleanup = new Map();
   }
 
   addResponse(callSid, responseText) {
@@ -130,19 +130,14 @@ class ResponseQueue {
     try {
       console.log(`🎯 Processando TTS para [${callSid}]: "${response.text}"`);
       
-      // 🔥 CORREÇÃO: Gera arquivo de áudio e hospeda externamente
       const audioUrl = await this.generateAndHostTTS(callSid, response.text);
-      
-      // Envia via TwiML com URL externa
       await this.updateCallWithAudioURL(callSid, audioUrl);
       
-      // Remove da fila após sucesso
       callQueue.responses.shift();
       callQueue.retryCount = 0;
       
       console.log(`✅ Áudio TTS enviado para [${callSid}]. Restantes: ${callQueue.responses.length}`);
       
-      // Agenda próximo processamento
       if (callQueue.responses.length > 0) {
         setTimeout(() => this.processQueue(callSid), this.processingDelay);
       } else {
@@ -168,7 +163,6 @@ class ResponseQueue {
     }
   }
 
-  // 🔥 CORREÇÃO: Gera arquivo MP3 e retorna URL pública
   async generateAndHostTTS(callSid, text) {
     try {
       const request = {
@@ -176,7 +170,7 @@ class ResponseQueue {
         voice: ttsConfig.voice,
         audioConfig: {
           ...ttsConfig.audioConfig,
-          audioEncoding: 'MP3' // Sempre MP3 para menor tamanho
+          audioEncoding: 'MP3'
         }
       };
 
@@ -188,13 +182,11 @@ class ResponseQueue {
         throw new Error('Resposta de TTS vazia');
       }
       
-      // 🔥 SALVA COMO ARQUIVO MP3
       const filename = `tts_${callSid}_${Date.now()}.mp3`;
       const filepath = join(audioDir, filename);
       
       writeFileSync(filepath, response.audioContent, 'binary');
       
-      // Registra arquivo para limpeza posterior
       if (this.audioFileCleanup.has(callSid)) {
         this.audioFileCleanup.get(callSid).push(filepath);
       }
@@ -210,15 +202,12 @@ class ResponseQueue {
     }
   }
 
-  // 🔥 CORREÇÃO: Usa URL externa em vez de base64
   async updateCallWithAudioURL(callSid, audioUrl) {
     try {
       const twiml = new twilio.twiml.VoiceResponse();
       
-      // 🔥 USA URL EXTERNA - não tem limite de tamanho!
       twiml.play({}, audioUrl);
       
-      // Mantém o stream aberto
       const start = twiml.start();
       start.stream({ 
         url: `wss://${new URL(baseUrl).host}/media-stream`,
@@ -253,9 +242,7 @@ class ResponseQueue {
     }
   }
 
-  // 🔥 NOVO: Limpa arquivos de áudio
   cleanup(callSid) {
-    // Remove arquivos de áudio
     if (this.audioFileCleanup.has(callSid)) {
       const audioFiles = this.audioFileCleanup.get(callSid);
       audioFiles.forEach(filepath => {
@@ -275,9 +262,7 @@ class ResponseQueue {
     console.log(`🧹 Fila TTS limpa para [${callSid}]`);
   }
 
-  // 🔥 NOVO: Limpeza automática de arquivos antigos
   startAudioCleanupSchedule() {
-    // Limpa arquivos com mais de 1 hora a cada 30 minutos
     setInterval(() => {
       const now = Date.now();
       const oneHourAgo = now - (60 * 60 * 1000);
@@ -303,48 +288,161 @@ class ResponseQueue {
           this.audioFileCleanup.set(callSid, remainingFiles);
         }
       });
-    }, 30 * 60 * 1000); // 30 minutos
+    }, 30 * 60 * 1000);
   }
 }
 
 const responseQueue = new ResponseQueue();
-responseQueue.startAudioCleanupSchedule(); // 🔥 INICIAR LIMPEZA AUTOMÁTICA
+responseQueue.startAudioCleanupSchedule();
 
 // =============================
-// 🧠 Gemini Service (ATUALIZADO COM NOME)
+// 🧠 Gemini Service com Prompts Dinâmicos
 // =============================
 class GeminiService {
   constructor() {
     this.conversationHistory = new Map();
-    this.userData = new Map(); // 🔥 MUDANÇA: Agora armazena mais dados
+    this.userData = new Map();
     this.maxHistoryLength = 6;
+    
+    // 🔥 SISTEMA DE PROMPTS DINÂMICOS
+    this.problemPrompts = {
+      'email': {
+        system: `Você é um especialista em configuração de e-mail. 
+PROBLEMA: Configurar e-mail no celular
+NOME DA PESSOA: {nome}
+
+Instruções específicas:
+- Foque em problemas de configuração de e-mail (Gmail, Outlook, etc.)
+- Ajude com servidores de entrada/saída (IMAP, SMTP)
+- Oriente sobre senhas de aplicativo e autenticação
+- Explique de forma simples e passo a passo
+- Mantenha 1-2 frases por resposta
+- Use o nome da pessoa naturalmente
+- Seja prático e direto ao ponto`,
+        welcome: `Crie uma mensagem de boas-vindas para {nome} sobre configuração de e-mail no celular.
+Seja prático e ofereça ajuda imediata com servidores e senhas.
+Apenas UMA frase curta e direta.`
+      },
+      
+      'internet': {
+        system: `Você é um técnico especialista em problemas de internet.
+PROBLEMA: Problemas de conexão na internet  
+NOME DA PESSOA: {nome}
+
+Instruções específicas:
+- Ajude com troubleshooting de conexão WiFi e dados móveis
+- Sugira verificação de senha, reset de modem, configuração DNS
+- Oriente sobre testes de velocidade e verificação de provedor
+- Use linguagem técnica mas acessível
+- Mantenha 1-2 frases por resposta
+- Foque em soluções práticas e imediatas`,
+        welcome: `Crie uma mensagem de boas-vindas para {nome} sobre problemas de conexão na internet.
+Mostre-se preparado para diagnosticar e resolver o problema rapidamente.
+Apenas UMA frase curta.`
+      },
+      
+      'conta': {
+        system: `Você é um especialista em atualização de cadastro.
+PROBLEMA: Atualizar cadastro da conta
+NOME DA PESSOA: {nome}
+
+Instruções específicas:
+- Auxilie com atualização de dados pessoais, endereço, telefone
+- Oriente sobre verificação de documentos e confirmação de identidade
+- Explique prazos e confirmações de atualização
+- Foque em segurança e verificação de dados
+- Mantenha 1-2 frases por resposta
+- Seja claro sobre os procedimentos necessários`,
+        welcome: `Crie uma mensagem de boas-vindas para {nome} sobre atualização de cadastro.
+Destaque a importância de manter os dados atualizados e a segurança.
+Apenas UMA frase curta.`
+      },
+      
+      'fatura': {
+        system: `Você é um especialista financeiro.
+PROBLEMA: Fatura com valor incorreto
+NOME DA PESSOA: {nome}
+
+Instruções específicas:
+- Ajude a analisar cobranças e disputar valores incorretos
+- Oriente sobre verificação de uso, tarifas e impostos
+- Explique prazos para contestação e documentos necessários
+- Mantenha tom profissional mas empático com o problema
+- Mantenha 1-2 frases por resposta
+- Ofereça orientações claras sobre próximos passos`,
+        welcome: `Crie uma mensagem de boas-vindas para {nome} sobre problemas na fatura.
+Mostre compreensão e disposição para resolver a questão.
+Apenas UMA frase curta.`
+      },
+      
+      'suporte': {
+        system: `Você é um técnico de suporte urgente.
+PROBLEMA: Suporte técnico urgente
+NOME DA PESSOA: {nome}
+
+Instruções específicas:
+- Priorize resolução rápida e eficiente
+- Identifique a criticidade do problema rapidamente
+- Ofereça soluções imediatas e escalonamento se necessário
+- Mantenha calma e profissionalismo mesmo em situações urgentes
+- Mantenha 1-2 frases por resposta
+- Foque em acalmar o usuário e resolver o problema`,
+        welcome: `Crie uma mensagem de boas-vindas urgente para {nome}.
+Transmita confiança e rapidez no atendimento.
+Apenas UMA frase curta.`
+      },
+      
+      'default': {
+        system: `Você é um assistente de chamada telefônica em português brasileiro.
+PROBLEMA: {issue}
+NOME DA PESSOA: {nome}
+
+Instruções:
+- Responda com 1 a 2 frases curtas, claras e naturais.
+- Mantenha o foco no problema mencionado.
+- Use o nome da pessoa sempre que fizer sentido.
+- Adote um tom amigável, profissional e humano.`,
+        welcome: `Crie uma mensagem de boas-vindas em português brasileiro para {nome} sobre: {issue}
+Apenas UMA frase curta, cordial e que transmita confiança.`
+      }
+    };
   }
 
-  async generateWelcomeMessage(callSid, issue, nome) { // 🔥 ADICIONAR nome como parâmetro
+  // 🔥 IDENTIFICAR TIPO DE PROBLEMA
+  identifyProblemType(issue) {
+    const issueLower = issue.toLowerCase();
+    
+    if (issueLower.includes('email') || issueLower.includes('e-mail')) return 'email';
+    if (issueLower.includes('internet') || issueLower.includes('conexão') || issueLower.includes('wifi')) return 'internet';
+    if (issueLower.includes('conta') || issueLower.includes('cadastro') || issueLower.includes('atualizar')) return 'conta';
+    if (issueLower.includes('fatura') || issueLower.includes('cobrança') || issueLower.includes('valor')) return 'fatura';
+    if (issueLower.includes('suporte') || issueLower.includes('técnico') || issueLower.includes('urgente')) return 'suporte';
+    
+    return 'default';
+  }
+
+  async generateWelcomeMessage(callSid, issue, nome) {
     try {
+      const problemType = this.identifyProblemType(issue);
+      const promptConfig = this.problemPrompts[problemType] || this.problemPrompts.default;
+      
       this.userData.set(callSid, { 
         issue: issue,
-        nome: nome 
+        nome: nome,
+        problemType: problemType
       });
       
-      const prompt = `Crie uma mensagem de boas-vindas em português brasileiro para iniciar uma conversa sobre: ${issue}
-        Nome da pessoa: ${nome}
+      const prompt = promptConfig.welcome
+        .replace(/{nome}/g, nome)
+        .replace(/{issue}/g, issue);
 
-        Regras:
-        - Apenas UMA frase curta
-        - Seja cordial e transmita confiança.
-        - Mencione o nome da pessoa diretamente.
-        - Use linguagem natural e profissional, sem soar robótica.
-
-        Sua mensagem:`;
-
-      console.log(`🎯 Gerando mensagem de boas-vindas para: ${nome} - ${issue}`);
+      console.log(`🎯 Gerando mensagem [${problemType}] para: ${nome} - ${issue}`);
       
       const result = await generativeModel.generateContent(prompt);
       const response = result.response;
       const welcomeMessage = response.candidates[0].content.parts[0].text.replace(/\*/g, '').trim();
       
-      console.log(`🤖 Mensagem de boas-vindas para ${nome}: ${welcomeMessage}`);
+      console.log(`🤖 Mensagem de boas-vindas [${problemType}] para ${nome}: ${welcomeMessage}`);
       
       return welcomeMessage;
       
@@ -363,12 +461,12 @@ class GeminiService {
         throw new Error('Dados do usuário não encontrados');
       }
       
-      const { issue, nome } = userData;
+      const { issue, nome, problemType } = userData;
       const recentHistory = history.slice(-3);
       
-      const prompt = this.buildPrompt(userMessage, recentHistory, issue, nome); // 🔥 ADICIONAR nome
+      const prompt = this.buildProblemSpecificPrompt(userMessage, recentHistory, issue, nome, problemType);
       
-      console.log(`🧠 Gemini [${callSid} - ${nome}]: "${userMessage.substring(0, 50)}..."`);
+      console.log(`🧠 Gemini [${callSid} - ${nome} - ${problemType}]: "${userMessage.substring(0, 50)}..."`);
       
       const result = await generativeModel.generateContent(prompt);
       const response = result.response;
@@ -385,7 +483,7 @@ class GeminiService {
       
       this.updateConversationHistory(callSid, userMessage, text);
       
-      console.log(`🤖 Resposta [${callSid} - ${nome}]: "${text.substring(0, 50)}..."`);
+      console.log(`🤖 Resposta [${callSid} - ${problemType}]: "${text.substring(0, 50)}..."`);
       
       return text;
       
@@ -403,18 +501,13 @@ class GeminiService {
     }
   }
 
-  buildPrompt(userMessage, history, issue, nome) { // 🔥 ADICIONAR nome
-    let prompt = `Você é um assistente de chamada telefônica em português brasileiro.
-
-PROBLEMA: ${issue}
-NOME DA PESSOA: ${nome}
-
-Instruções:
-- Responda com 1 a 2 frases curtas, claras e naturais.
-- Mantenha o foco no problema mencionado.
-- Use o nome da pessoa sempre que fizer sentido.
-- Adote um tom amigável, profissional e humano, como se estivesse falando diretamente com o usuário.
-`;
+  // 🔥 CONSTRUIR PROMPT ESPECÍFICO
+  buildProblemSpecificPrompt(userMessage, history, issue, nome, problemType) {
+    const promptConfig = this.problemPrompts[problemType] || this.problemPrompts.default;
+    
+    let prompt = promptConfig.system
+      .replace(/{nome}/g, nome)
+      .replace(/{issue}/g, issue);
 
     if (history.length > 0) {
       history.forEach(([user, assistant]) => {
@@ -424,7 +517,7 @@ Instruções:
     }
 
     prompt += `\n\nUsuário: ${userMessage}`;
-    prompt += `\n\nSua resposta (curta, sobre "${issue}", para ${nome}):`;
+    prompt += `\n\nSua resposta (curta, focada no problema, para ${nome}):`;
 
     return prompt;
   }
@@ -449,7 +542,7 @@ Instruções:
 
   cleanup(callSid) {
     this.conversationHistory.delete(callSid);
-    this.userData.delete(callSid); // 🔥 MUDANÇA: Limpar userData
+    this.userData.delete(callSid);
     console.log(`🧹 Histórico limpo para [${callSid}]`);
   }
 }
@@ -457,7 +550,7 @@ Instruções:
 const geminiService = new GeminiService();
 
 // =============================
-// 🎯 Configuração STT (ATUALIZADA)
+// 🎯 Configuração STT
 // =============================
 const sttConfig = {
   config: {
@@ -476,14 +569,14 @@ const sttConfig = {
     }]
   },
   interimResults: true,
-  interimResultsThreshold: 0.3, // 🔥 AUMENTAR threshold para menos interims
+  interimResultsThreshold: 0.3,
   single_utterance: false,
-  noSpeechTimeout: 60, // 🔥 AUMENTAR timeout sem áudio
-  enableVoiceActivityEvents: true // 🔥 ATIVAR eventos de atividade
+  noSpeechTimeout: 60,
+  enableVoiceActivityEvents: true
 };
 
 // =============================
-// 🎙️ Audio Stream Session (ATUALIZADO COM CORREÇÕES)
+// 🎙️ Audio Stream Session
 // =============================
 class AudioStreamSession {
   constructor(ws, callSid, issue = null, nome = null) {
@@ -498,13 +591,13 @@ class AudioStreamSession {
     this.consecutiveErrors = 0;
     this.maxConsecutiveErrors = 3;
     this.healthCheckInterval = null;
-    this.inactivityTimeout = null; // 🔥 NOVO: Timeout de inatividade
-    this.lastActivityTime = Date.now(); // 🔥 NOVO: Última atividade
+    this.inactivityTimeout = null;
+    this.lastActivityTime = Date.now();
     
     console.log(`🎧 Nova sessão: ${callSid}, Nome: ${nome}, Issue: ${issue}`);
     this.setupSTT();
     this.startHealthCheck();
-    this.resetInactivityTimer(); // 🔥 NOVO: Iniciar timer
+    this.resetInactivityTimer();
   }
 
   setupSTT() {
@@ -523,7 +616,6 @@ class AudioStreamSession {
         })
         .on("end", () => {
           console.log(`🔚 Stream STT finalizado [${this.callSid}]`);
-          // 🔥 TENTAR RECRIAR se ainda estiver ativo
           if (this.isActive) {
             console.log(`🔄 STT finalizado inesperadamente, recriando... [${this.callSid}]`);
             setTimeout(() => {
@@ -547,13 +639,11 @@ class AudioStreamSession {
     }
   }
 
-  // 🔥 NOVO: Resetar timer de inatividade
   resetInactivityTimer() {
     if (this.inactivityTimeout) {
       clearTimeout(this.inactivityTimeout);
     }
     
-    // Se não houver atividade em 30 segundos, verificar saúde
     this.inactivityTimeout = setTimeout(() => {
       console.log(`⏰ Timeout de inatividade [${this.callSid}], verificando...`);
       this.checkHealth();
@@ -598,7 +688,7 @@ class AudioStreamSession {
         if (!transcript) return;
 
         this.consecutiveErrors = 0;
-        this.resetInactivityTimer(); // 🔥 RESETAR no áudio recebido
+        this.resetInactivityTimer();
 
         if (isFinal) {
           console.log(`📝 [FINAL] ${this.callSid} (${this.nome}): ${transcript}`);
@@ -652,7 +742,7 @@ class AudioStreamSession {
       try {
         const audioBuffer = Buffer.from(payload, "base64");
         this.sttStream.write(audioBuffer);
-        this.resetInactivityTimer(); // 🔥 RESETAR no media recebido
+        this.resetInactivityTimer();
       } catch (error) {
         console.error(`❌ Erro processando áudio [${this.callSid}]:`, error);
         this.consecutiveErrors++;
@@ -668,7 +758,7 @@ class AudioStreamSession {
       clearInterval(this.healthCheckInterval);
     }
     
-    if (this.inactivityTimeout) { // 🔥 LIMPAR timeout
+    if (this.inactivityTimeout) {
       clearTimeout(this.inactivityTimeout);
     }
     
@@ -686,7 +776,7 @@ class AudioStreamSession {
 }
 
 // =============================
-// 🔄 WebSocket Server (ATUALIZADO COM CORREÇÕES)
+// 🔄 WebSocket Server
 // =============================
 const wss = new WebSocketServer({ 
   noServer: true,
@@ -694,7 +784,7 @@ const wss = new WebSocketServer({
 });
 
 const activeSessions = new Map();
-const pendingIssues = new Map(); // Agora armazena objetos {issue, nome}
+const pendingIssues = new Map();
 
 wss.on("connection", (ws, req) => {
   console.log("🎧 Nova conexão WebSocket");
@@ -710,7 +800,7 @@ wss.on("connection", (ws, req) => {
       isAlive = false;
       ws.ping();
     }
-  }, 15000); // 🔥 REDUZIR para 15 segundos
+  }, 15000);
 
   ws.on("message", (msg) => {
     try {
@@ -725,10 +815,9 @@ wss.on("connection", (ws, req) => {
           
           if (activeSessions.has(callSid)) {
             session = activeSessions.get(callSid);
-            session.ws = ws; // Atualizar WebSocket
+            session.ws = ws;
             console.log(`🔗 WebSocket atualizado para [${callSid}]`);
             
-            // 🔥 REINICIAR STT se necessário
             if (!session.sttStream || !session.isActive) {
               console.log(`🔄 Reativando STT para [${callSid}]`);
               session.setupSTT();
@@ -756,7 +845,6 @@ wss.on("connection", (ws, req) => {
           if (session && session.isActive) {
             session.handleMedia(data.media.payload);
           } else if (session) {
-            // 🔥 TENTAR REATIVAR se a sessão existe mas não está ativa
             console.log(`🔄 Tentando reativar sessão inativa [${callSid}]`);
             session.setupSTT();
             if (session.isActive) {
@@ -782,10 +870,8 @@ wss.on("connection", (ws, req) => {
     console.log(`🔌 WebSocket fechado: ${code} - ${reason}`);
     clearInterval(heartbeatInterval);
     
-    // 🔥 NÃO limpar sessão imediatamente, aguardar reconexão
     if (session && (code === 1001 || code === 1006)) {
       console.log(`⏳ WebSocket desconectado, aguardando reconexão [${session.callSid}]`);
-      // Manter a sessão ativa por 30 segundos para reconexão
       setTimeout(() => {
         if (session && session.ws?.readyState !== WebSocket.OPEN) {
           console.log(`🚫 Timeout de reconexão [${session.callSid}], limpando...`);
@@ -802,18 +888,17 @@ wss.on("connection", (ws, req) => {
   });
 
   ws.on("pong", () => {
-    isAlive = true; // 🔥 MARCAR como ativo
+    isAlive = true;
   });
 });
 
 // =============================
-// 📞 Endpoints Twilio (ATUALIZADO COM NOME)
+// 📞 Endpoints Twilio
 // =============================
 app.post("/twiml", (req, res) => {
   try {
     const response = new twilio.twiml.VoiceResponse();
 
-    // 🔥 REDUZIR a mensagem inicial
     response.say({ 
       voice: "alice", 
       language: "pt-BR" 
@@ -825,8 +910,7 @@ app.post("/twiml", (req, res) => {
       track: "inbound_track"
     });
 
-    // 🔥 AUMENTAR o pause para 5 minutos (máximo do Twilio)
-    response.pause({ length: 300 }); // 300 segundos = 5 minutos
+    response.pause({ length: 300 });
 
     res.type("text/xml");
     res.send(response.toString());
@@ -842,7 +926,7 @@ app.post("/twiml", (req, res) => {
 app.post("/make-call", async (req, res) => {
   let to = req.body.to;
   const issue = req.body.issue || "Preciso de ajuda com um problema";
-  const nome = req.body.nome || ""; // 🔥 NOVO: Capturar o nome
+  const nome = req.body.nome || "";
 
   if (!to || !nome) {
     return res.status(400).json({ 
@@ -851,7 +935,6 @@ app.post("/make-call", async (req, res) => {
   }
 
   try {
-    // 🔥 CORREÇÃO: Garantir que o número sempre tenha código 55
     to = to.trim().replace(/\s/g, "");
     
     if (!to.startsWith("+55")) {
@@ -879,7 +962,6 @@ app.post("/make-call", async (req, res) => {
     console.log(`👤 Nome do destinatário: ${nome}`);
     console.log(`🎯 Issue: ${issue}`);
     
-    // 🔥 ATUALIZADO: Salvar nome junto com o issue
     pendingIssues.set(call.sid, { 
       issue: issue, 
       nome: nome 
@@ -891,7 +973,8 @@ app.post("/make-call", async (req, res) => {
       nome: nome,
       issue: issue,
       numero_formatado: to,
-      features: ["STT", "Gemini AI", "Google TTS", "Voz natural", "Personalização por nome"]
+      problemType: geminiService.identifyProblemType(issue),
+      features: ["STT", "Gemini AI", "Google TTS", "Voz natural", "Personalização por nome", "Prompts dinâmicos"]
     });
   } catch (error) {
     console.error("❌ Erro criando chamada:", error);
@@ -930,13 +1013,12 @@ app.get("/health", (req, res) => {
     timestamp: new Date().toISOString(),
     active_sessions: activeSessions.size,
     pending_issues: pendingIssues.size,
-    features: ["STT", "Gemini AI", "Google TTS", "Voz natural premium", "Personalização por nome"]
+    features: ["STT", "Gemini AI", "Google TTS", "Voz natural premium", "Personalização por nome", "Prompts dinâmicos por problema"]
   });
 });
 
-// 🔥 MIDDLEWARE DE SEGURANÇA
+// Middleware de segurança
 app.use((req, res, next) => {
-  // Rate limiting básico
   const clientIP = req.ip || req.connection.remoteAddress;
   console.log(`🌐 Requisição: ${req.method} ${req.url} - IP: ${clientIP}`);
   next();
@@ -949,7 +1031,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// 🔥 ENDPOINT PARA CANCELAR CHAMADAS
+// Endpoint para cancelar chamadas
 app.post("/cancel-call", async (req, res) => {
   const { callSid } = req.body;
   
@@ -960,7 +1042,6 @@ app.post("/cancel-call", async (req, res) => {
   try {
     await client.calls(callSid).update({ status: 'completed' });
     
-    // Limpar recursos
     if (activeSessions.has(callSid)) {
       activeSessions.get(callSid).cleanup();
       activeSessions.delete(callSid);
@@ -978,79 +1059,197 @@ app.post("/cancel-call", async (req, res) => {
   }
 });
 
+// =============================
+// 🎯 Página HTML com Seleção de Problemas
+// =============================
 app.get("/", (req, res) => {
   res.send(`
     <html>
       <head>
-        <title>SafeCall AI</title>
+        <title>SafeCall AI - Prompts Dinâmicos</title>
         <style>
-          body { font-family: Arial, sans-serif; margin: 40px; }
-          .container { max-width: 800px; margin: 0 auto; }
-          .card { background: #f5f5f5; padding: 20px; margin: 20px 0; border-radius: 10px; }
-          button { background: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; }
-          input, textarea { width: 100%; padding: 10px; margin: 5px 0; border: 1px solid #ddd; border-radius: 5px; }
-          .feature { background: #e8f4fd; padding: 10px; margin: 5px 0; border-radius: 5px; }
-          .issues-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin: 15px 0; }
-          .issue-card { background: #fff; border: 1px solid #ccc; border-radius: 10px; padding: 15px; text-align: center; cursor: pointer; transition: 0.2s; }
-          .issue-card:hover { background: #007bff; color: white; border-color: #007bff; }
+          body { font-family: Arial, sans-serif; margin: 40px; background: #f0f2f5; }
+          .container { max-width: 900px; margin: 0 auto; }
+          .card { background: white; padding: 25px; margin: 20px 0; border-radius: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+          button { background: #007bff; color: white; padding: 12px 25px; border: none; border-radius: 8px; cursor: pointer; font-size: 16px; transition: 0.3s; }
+          button:hover { background: #0056b3; transform: translateY(-2px); }
+          input, textarea { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 8px; font-size: 16px; box-sizing: border-box; }
+          .feature { background: #e8f4fd; padding: 12px; margin: 8px 0; border-radius: 8px; border-left: 4px solid #007bff; }
+          .issues-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0; }
+          .issue-card { 
+            background: #fff; 
+            border: 2px solid #e0e0e0; 
+            border-radius: 12px; 
+            padding: 20px; 
+            text-align: center; 
+            cursor: pointer; 
+            transition: 0.3s; 
+            font-weight: 500;
+          }
+          .issue-card:hover { 
+            background: #007bff; 
+            color: white; 
+            border-color: #007bff;
+            transform: translateY(-3px);
+            box-shadow: 0 4px 15px rgba(0,123,255,0.3);
+          }
+          .issue-card.selected {
+            background: #007bff;
+            color: white;
+            border-color: #007bff;
+          }
+          .status-badge { 
+            display: inline-block; 
+            padding: 4px 12px; 
+            border-radius: 20px; 
+            font-size: 14px; 
+            margin: 5px; 
+          }
+          .status-active { background: #d4edda; color: #155724; }
+          .status-pending { background: #fff3cd; color: #856404; }
+          h1 { color: #333; text-align: center; margin-bottom: 30px; }
+          h3 { color: #444; margin-bottom: 20px; }
+          .problem-type { 
+            background: #17a2b8; 
+            color: white; 
+            padding: 4px 8px; 
+            border-radius: 4px; 
+            font-size: 12px; 
+            margin-left: 10px; 
+          }
         </style>
         <script>
-          function selectIssue(text) {
+          let selectedProblemType = 'default';
+          
+          function selectIssue(text, type) {
             const textarea = document.querySelector('textarea[name="issue"]');
+            const cards = document.querySelectorAll('.issue-card');
+            
+            // Remover seleção anterior
+            cards.forEach(card => card.classList.remove('selected'));
+            
+            // Adicionar seleção atual
+            event.target.classList.add('selected');
+            
             textarea.value = text;
+            selectedProblemType = type;
+            
+            // Atualizar display do tipo de problema
+            updateProblemTypeDisplay(type);
           }
+          
+          function updateProblemTypeDisplay(type) {
+            const typeDisplay = document.getElementById('problemTypeDisplay');
+            const typeNames = {
+              'email': '📱 E-mail',
+              'internet': '🌐 Internet', 
+              'conta': '🧾 Conta',
+              'fatura': '💰 Fatura',
+              'suporte': '🛠️ Suporte',
+              'default': '🔧 Geral'
+            };
+            typeDisplay.innerHTML = \`Tipo: <span class="problem-type">\${typeNames[type]}</span>\`;
+          }
+          
+          function updateStatus() {
+            fetch('/health')
+              .then(r => r.json())
+              .then(data => {
+                document.getElementById('activeSessions').textContent = data.active_sessions;
+                document.getElementById('pendingIssues').textContent = data.pending_issues;
+              });
+          }
+          
+          // Atualizar status a cada 5 segundos
+          setInterval(updateStatus, 5000);
+          updateStatus();
         </script>
       </head>
       <body>
         <div class="container">
-          <h1>SafeCall AI</h1>
+          <h1>SafeCall AI - Prompts Dinâmicos</h1>
           
           <div class="card">
-            <h3>Fazer Chamada de Voz</h3>
+            <h3>🎯 Fazer Chamada de Voz Inteligente</h3>
             <form action="/make-call" method="POST">
-              <!-- 🔥 ADICIONAR CAMPO NOME -->
               <input type="text" name="nome" placeholder="Nome da pessoa" value="Daniel" required>
               
-              <input type="tel" name="to" placeholder="21994442087" value="21994442087" required>
+              <input type="tel" name="to" placeholder="Número de telefone" value="21994442087" required>
 
+              <h4>Selecione o tipo de problema:</h4>
               <div class="issues-grid">
-                <div class="issue-card" onclick="selectIssue('Preciso de ajuda para configurar meu e-mail no celular')">
-                  📱 Configurar e-mail no celular
+                <div class="issue-card" onclick="selectIssue('Preciso de ajuda para configurar meu e-mail no celular', 'email')">
+                  📱 Configurar e-mail
+                  <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">Servidores, senhas, autenticação</div>
                 </div>
-                <div class="issue-card" onclick="selectIssue('Estou com problemas de conexão na internet')">
+                <div class="issue-card" onclick="selectIssue('Estou com problemas de conexão na internet', 'internet')">
                   🌐 Problemas de internet
+                  <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">WiFi, modem, velocidade</div>
                 </div>
-                <div class="issue-card" onclick="selectIssue('Quero atualizar o cadastro da minha conta')">
+                <div class="issue-card" onclick="selectIssue('Quero atualizar o cadastro da minha conta', 'conta')">
                   🧾 Atualizar cadastro
+                  <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">Dados, documentos, segurança</div>
                 </div>
-                <div class="issue-card" onclick="selectIssue('Minha fatura veio com valor incorreto')">
+                <div class="issue-card" onclick="selectIssue('Minha fatura veio com valor incorreto', 'fatura')">
                   💰 Fatura incorreta
+                  <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">Cobranças, contestação</div>
                 </div>
-                <div class="issue-card" onclick="selectIssue('Preciso de suporte técnico urgente')">
-                  🛠️ Suporte técnico urgente
+                <div class="issue-card" onclick="selectIssue('Preciso de suporte técnico urgente', 'suporte')">
+                  🛠️ Suporte técnico
+                  <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">Urgente, crítico</div>
                 </div>
               </div>
 
-              <textarea name="issue" placeholder="Descreva o problema que o usuário precisa resolver..." rows="3" required>
+              <div id="problemTypeDisplay" style="margin: 10px 0; font-weight: bold;">Tipo: <span class="problem-type">🔧 Geral</span></div>
+
+              <textarea name="issue" placeholder="Descreva o problema ou use os botões acima..." rows="3" required>
 Preciso de ajuda para configurar meu email no celular
               </textarea>
-              <button type="submit">Fazer Ligação</button>
+              <button type="submit">🎯 Fazer Ligação Inteligente</button>
             </form>
           </div>
           
           <div class="card">
-            <h3>Status do Sistema</h3>
-            <p>Sessões ativas: <strong>${activeSessions.size}</strong></p>
-            <p>Issues pendentes: <strong>${pendingIssues.size}</strong></p>
-            <a href="/health">Ver Health Check</a>
+            <h3>📊 Status do Sistema</h3>
+            <div class="feature">
+              Sessões ativas: <strong id="activeSessions">0</strong>
+              <span class="status-badge status-active">STT + Gemini</span>
+            </div>
+            <div class="feature">
+              Issues pendentes: <strong id="pendingIssues">0</strong>
+              <span class="status-badge status-pending">Aguardando</span>
+            </div>
+            <a href="/health" style="color: #007bff; text-decoration: none;">🔍 Ver Health Check Detalhado</a>
           </div>
 
           <div class="card">
-            <h3>Cancelar Chamada</h3>
+            <h3>🚫 Cancelar Chamada</h3>
             <form action="/cancel-call" method="POST">
               <input type="text" name="callSid" placeholder="Call SID da chamada" required>
-              <button type="submit" style="background: #dc3545;">Cancelar Chamada</button>
+              <button type="submit" style="background: #dc3545;">⛔ Cancelar Chamada</button>
             </form>
+          </div>
+
+          <div class="card">
+            <h3>🎯 Sistema de Prompts Dinâmicos</h3>
+            <div class="feature">
+              <strong>📱 E-mail:</strong> Configuração, servidores IMAP/SMTP, senhas de aplicativo
+            </div>
+            <div class="feature">
+              <strong>🌐 Internet:</strong> Troubleshooting, reset de modem, velocidade, DNS
+            </div>
+            <div class="feature">
+              <strong>🧾 Conta:</strong> Atualização de dados, documentos, segurança
+            </div>
+            <div class="feature">
+              <strong>💰 Fatura:</strong> Análise de cobranças, contestação, documentos
+            </div>
+            <div class="feature">
+              <strong>🛠️ Suporte:</strong> Urgência, criticidade, escalonamento
+            </div>
+            <div class="feature">
+              <strong>🔧 Geral:</strong> Prompt padrão para outros problemas
+            </div>
           </div>
         </div>
       </body>
@@ -1068,8 +1267,8 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🔊 Google TTS: ${ttsConfig.voice.name}`);
   console.log(`📁 Áudios servidos em: ${baseUrl}/audio/`);
   console.log(`🔗 Health: http://localhost:${PORT}/health`);
-  console.log(`👤 Recurso: Personalização por nome ATIVADA`);
-  console.log(`🔄 Sistema: Reconexão automática ATIVADA`);
+  console.log(`🎯 Sistema: Prompts dinâmicos ATIVADO`);
+  console.log(`📊 Tipos de problemas: email, internet, conta, fatura, suporte`);
 });
 
 server.on("upgrade", (req, socket, head) => {
