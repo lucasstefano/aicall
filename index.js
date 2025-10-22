@@ -2,7 +2,6 @@ import express from "express";
 import twilio from "twilio";
 import WebSocket, { WebSocketServer } from "ws";
 import speech from "@google-cloud/speech";
-import { Buffer } from "buffer";
 import { VertexAI } from '@google-cloud/vertexai';
 
 const app = express();
@@ -40,8 +39,8 @@ const generativeModel = vertex_ai.getGenerativeModel({
 // =============================
 class ResponseQueue {
   constructor() {
-    this.queue = new Map(); // callSid -> { responses: [], isProcessing: false }
-    this.processingDelay = 2000; // 2 segundos entre respostas
+    this.queue = new Map();
+    this.processingDelay = 2000;
   }
 
   addResponse(callSid, responseText) {
@@ -58,7 +57,6 @@ class ResponseQueue {
 
     console.log(`📥 Fila [${callSid}]: ${responseText.substring(0, 50)}...`);
     
-    // Inicia processamento se não estiver processando
     if (!callQueue.isProcessing) {
       this.processQueue(callSid);
     }
@@ -77,10 +75,8 @@ class ResponseQueue {
     try {
       console.log(`🎯 Processando resposta para [${callSid}]: ${response.text}`);
       
-      // Atualiza o TwiML com a nova resposta
       await this.updateCallWithResponse(callSid, response.text);
       
-      // Agenda próximo processamento
       setTimeout(() => this.processQueue(callSid), this.processingDelay);
       
     } catch (error) {
@@ -91,14 +87,12 @@ class ResponseQueue {
 
   async updateCallWithResponse(callSid, responseText) {
     try {
-      // 🔥 Atualiza a chamada Twilio com novo TwiML
       const twiml = new twilio.twiml.VoiceResponse();
       twiml.say({ 
         voice: "alice", 
         language: "pt-BR" 
       }, responseText);
       
-      // 🔥 Mantém o stream aberto para continuar ouvindo
       const start = twiml.start();
       start.stream({ 
         url: `wss://${new URL(baseUrl).host}/media-stream`,
@@ -126,23 +120,61 @@ class ResponseQueue {
   }
 }
 
-// Instância global da fila
 const responseQueue = new ResponseQueue();
 
 // =============================
-// 🧠 Gemini Service
+// 🧠 Gemini Service (MODIFICADO)
 // =============================
 class GeminiService {
   constructor() {
     this.conversationHistory = new Map(); // callSid -> history
+    this.userIssues = new Map(); // callSid -> issue
     this.maxHistoryLength = 10;
+  }
+
+  // 🔥 NOVO: Gera mensagem de boas-vindas personalizada com o issue
+  async generateWelcomeMessage(callSid, issue) {
+    try {
+      // Salva o issue para usar no contexto
+      this.userIssues.set(callSid, issue);
+      
+      const prompt = `Você é um assistente útil em uma chamada telefônica. 
+Crie uma MENSAGEM DE BOAS-VINDAS inicial em português brasileiro para o usuário.
+
+Contexto do problema do usuário: ${issue}
+
+Regras:
+- Apenas UMA frase curta e natural
+- Seja amigável e acolhedor
+- Não inclua o problema completo, apenas uma introdução
+- Use linguagem conversacional
+
+Exemplo: "Olá! Vou te ajudar a resolver isso. Pode me contar mais detalhes?"
+
+Sua mensagem de boas-vindas:`;
+
+      console.log(`🎯 Gerando mensagem de boas-vindas para issue: ${issue}`);
+      
+      const result = await generativeModel.generateContent(prompt);
+      const response = result.response;
+      const welcomeMessage = response.candidates[0].content.parts[0].text.replace(/\*/g, '').trim();
+      
+      console.log(`🤖 Mensagem de boas-vindas gerada: ${welcomeMessage}`);
+      
+      return welcomeMessage;
+      
+    } catch (error) {
+      console.error(`❌ Erro gerando mensagem de boas-vindas [${callSid}]:`, error);
+      return "Olá! Sou sua assistente inteligente. Pode falar que eu respondo!";
+    }
   }
 
   async generateResponse(callSid, userMessage) {
     try {
       const history = this.getConversationHistory(callSid);
+      const issue = this.userIssues.get(callSid);
       
-      const prompt = this.buildPrompt(userMessage, history);
+      const prompt = this.buildPrompt(userMessage, history, issue);
       
       console.log(`🧠 Gemini prompt para [${callSid}]: ${userMessage.substring(0, 100)}...`);
       
@@ -163,15 +195,19 @@ class GeminiService {
     }
   }
 
-  buildPrompt(userMessage, history) {
+  // 🔥 MODIFICADO: Inclui o issue no contexto
+  buildPrompt(userMessage, history, issue) {
     let prompt = `Você é um assistente útil e amigável em uma chamada telefônica. 
 Responda de forma clara, concisa e natural em português brasileiro.
+
+CONTEXTO DO PROBLEMA DO USUÁRIO: ${issue}
 
 Regras importantes:
 - Respostas curtas (máximo 2 frases)
 - Linguagem natural e conversacional
 - Sem marcadores ou formatação
-- Foco no que o usuário disse
+- Mantenha o foco no problema: "${issue}"
+- Relacione as respostas com o contexto do problema
 
 Histórico recente:`;
 
@@ -185,7 +221,7 @@ Histórico recente:`;
     }
 
     prompt += `\n\nÚltima mensagem do usuário: ${userMessage}`;
-    prompt += `\n\nSua resposta:`;
+    prompt += `\n\nSua resposta (relacionada com "${issue}"):`;
 
     return prompt;
   }
@@ -201,7 +237,6 @@ Histórico recente:`;
     const history = this.getConversationHistory(callSid);
     history.push([userMessage, assistantResponse]);
     
-    // Mantém apenas o histórico recente
     if (history.length > this.maxHistoryLength) {
       history.shift();
     }
@@ -211,7 +246,8 @@ Histórico recente:`;
 
   cleanup(callSid) {
     this.conversationHistory.delete(callSid);
-    console.log(`🧹 Histórico Gemini limpo para [${callSid}]`);
+    this.userIssues.delete(callSid);
+    console.log(`🧹 Histórico e issue limpos para [${callSid}]`);
   }
 }
 
@@ -235,19 +271,20 @@ const sttConfig = {
 };
 
 // =============================
-// 🎙️ Audio Stream Session com Gemini
+// 🎙️ Audio Stream Session com Gemini (MODIFICADO)
 // =============================
 class AudioStreamSession {
-  constructor(ws, callSid) {
+  constructor(ws, callSid, issue = null) {
     this.ws = ws;
     this.callSid = callSid;
+    this.issue = issue;
     this.sttStream = null;
     this.isActive = false;
-    this.transcriptBuffer = [];
     this.lastFinalTranscript = "";
     this.geminiProcessing = false;
+    this.welcomeMessageSent = false;
     
-    console.log(`🎧 Nova sessão com Gemini: ${callSid}`);
+    console.log(`🎧 Nova sessão com Gemini: ${callSid}, Issue: ${issue}`);
     this.setupSTT();
   }
 
@@ -276,16 +313,12 @@ class AudioStreamSession {
         if (isFinal) {
           console.log(`📝 [FINAL] ${this.callSid}: ${transcript}`);
           
-          // 🔥 Evita processar a mesma transcrição múltiplas vezes
           if (transcript !== this.lastFinalTranscript) {
             this.lastFinalTranscript = transcript;
             await this.processWithGemini(transcript);
           }
           
-          this.sendToWebhook('final', { transcript });
-          
         } else {
-          // Interim results para debug
           if (transcript.length > 10) {
             console.log(`🎯 [INTERIM] ${this.callSid}: ${transcript}`);
           }
@@ -297,7 +330,6 @@ class AudioStreamSession {
   }
 
   async processWithGemini(transcript) {
-    // 🔥 Evita processamento concorrente para mesma chamada
     if (this.geminiProcessing) {
       console.log(`⏳ Gemini já processando [${this.callSid}], ignorando: ${transcript}`);
       return;
@@ -306,16 +338,11 @@ class AudioStreamSession {
     this.geminiProcessing = true;
 
     try {
-      // 🔥 Gera resposta com Gemini
       const geminiResponse = await geminiService.generateResponse(this.callSid, transcript);
-      
-      // 🔥 Adiciona à fila para ser falada
       responseQueue.addResponse(this.callSid, geminiResponse);
       
     } catch (error) {
       console.error(`❌ Erro processamento Gemini [${this.callSid}]:`, error);
-      
-      // Resposta de fallback
       responseQueue.addResponse(this.callSid, "Desculpe, não entendi. Pode repetir?");
       
     } finally {
@@ -334,24 +361,6 @@ class AudioStreamSession {
     }
   }
 
-  sendToWebhook(type, data) {
-    const webhookUrl = `${baseUrl}/transcription-webhook`;
-    const payload = {
-      callSid: this.callSid,
-      type: type,
-      timestamp: new Date().toISOString(),
-      ...data
-    };
-
-    fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    }).catch(error => {
-      console.error(`❌ Erro webhook [${this.callSid}]:`, error);
-    });
-  }
-
   cleanup() {
     this.isActive = false;
     
@@ -360,7 +369,6 @@ class AudioStreamSession {
       this.sttStream = null;
     }
 
-    // Limpeza de recursos
     geminiService.cleanup(this.callSid);
     responseQueue.cleanup(this.callSid);
     
@@ -369,10 +377,11 @@ class AudioStreamSession {
 }
 
 // =============================
-// 🔄 WebSocket Server
+// 🔄 WebSocket Server (MODIFICADO)
 // =============================
 const wss = new WebSocketServer({ noServer: true });
 const activeSessions = new Map();
+const pendingIssues = new Map(); // callSid -> issue (para sessões que ainda não começaram)
 
 wss.on("connection", (ws, req) => {
   console.log("🎧 Nova conexão WebSocket");
@@ -386,13 +395,31 @@ wss.on("connection", (ws, req) => {
         case "start":
           console.log("🚀 Iniciando stream com Gemini:", data.start.callSid);
           
-          if (activeSessions.has(data.start.callSid)) {
-            session = activeSessions.get(data.start.callSid);
+          const callSid = data.start.callSid;
+          const issue = pendingIssues.get(callSid);
+          
+          if (activeSessions.has(callSid)) {
+            session = activeSessions.get(callSid);
             session.ws = ws;
           } else {
-            session = new AudioStreamSession(ws, data.start.callSid);
-            activeSessions.set(data.start.callSid, session);
+            session = new AudioStreamSession(ws, callSid, issue);
+            activeSessions.set(callSid, session);
+            
+            // 🔥 Envia mensagem de boas-vindas personalizada
+            if (issue) {
+              geminiService.generateWelcomeMessage(callSid, issue)
+                .then(welcomeMessage => {
+                  responseQueue.addResponse(callSid, welcomeMessage);
+                })
+                .catch(error => {
+                  console.error(`❌ Erro enviando mensagem de boas-vindas [${callSid}]:`, error);
+                  responseQueue.addResponse(callSid, "Olá! Como posso te ajudar?");
+                });
+            }
           }
+          
+          // Remove o issue pendente
+          pendingIssues.delete(callSid);
           break;
 
         case "media":
@@ -424,17 +451,19 @@ wss.on("connection", (ws, req) => {
 });
 
 // =============================
-// 📞 Endpoints Twilio
+// 📞 Endpoints Twilio (MODIFICADO)
 // =============================
+
+// 🔥 MODIFICADO: TwiML agora usa mensagem genérica (a personalizada vem via WebSocket)
 app.post("/twiml", (req, res) => {
   try {
     const response = new twilio.twiml.VoiceResponse();
 
-    // Mensagem de boas-vindas inicial
+    // Mensagem genérica - a personalizada será enviada via WebSocket
     response.say({ 
       voice: "alice", 
       language: "pt-BR" 
-    }, "Olá! Sou sua assistente inteligente. Pode falar que eu respondo!");
+    }, "Olá! Um momento por favor.");
 
     const start = response.start();
     start.stream({ 
@@ -442,7 +471,7 @@ app.post("/twiml", (req, res) => {
       track: "inbound_track"
     });
 
-    response.pause({ length: 300 }); // 5 minutos
+    response.pause({ length: 300 });
 
     res.type("text/xml");
     res.send(response.toString());
@@ -453,8 +482,10 @@ app.post("/twiml", (req, res) => {
   }
 });
 
+// 🔥 MODIFICADO: Agora aceita 'issue' no body
 app.post("/make-call", async (req, res) => {
   const to = req.body.to;
+  const issue = req.body.issue || "Preciso de ajuda com um problema";
 
   if (!to) {
     return res.status(400).json({ error: "Número é obrigatório" });
@@ -470,11 +501,16 @@ app.post("/make-call", async (req, res) => {
       statusCallbackEvent: ["answered", "completed"],
     });
 
-    console.log("✅ Chamada com Gemini iniciada:", call.sid);
+    console.log(`✅ Chamada com Gemini iniciada: ${call.sid}, Issue: ${issue}`);
+    
+    // 🔥 Salva o issue para usar quando a sessão WebSocket começar
+    pendingIssues.set(call.sid, issue);
+    
     res.json({ 
       message: "Chamada com IA iniciada", 
       sid: call.sid,
-      features: ["STT", "Gemini AI", "Respostas em tempo real"]
+      issue: issue,
+      features: ["STT", "Gemini AI", "Respostas personalizadas"]
     });
   } catch (error) {
     console.error("❌ Erro criando chamada:", error);
@@ -501,6 +537,8 @@ app.post("/call-status", (req, res) => {
       session.cleanup();
       activeSessions.delete(CallSid);
     }
+    // Limpa issue pendente também
+    pendingIssues.delete(CallSid);
   }
   
   res.status(200).send("OK");
@@ -511,10 +549,12 @@ app.get("/health", (req, res) => {
     status: "healthy",
     timestamp: new Date().toISOString(),
     active_sessions: activeSessions.size,
-    features: ["STT", "Gemini AI", "Real-time Responses"]
+    pending_issues: pendingIssues.size,
+    features: ["STT", "Gemini AI", "Respostas personalizadas por issue"]
   });
 });
 
+// 🔥 MODIFICADO: Interface web com campo para issue
 app.get("/", (req, res) => {
   res.send(`
     <html>
@@ -525,6 +565,7 @@ app.get("/", (req, res) => {
           .container { max-width: 800px; margin: 0 auto; }
           .card { background: #f5f5f5; padding: 20px; margin: 20px 0; border-radius: 10px; }
           button { background: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; }
+          input, textarea { width: 100%; padding: 10px; margin: 5px 0; border: 1px solid #ddd; border-radius: 5px; }
         </style>
       </head>
       <body>
@@ -535,14 +576,16 @@ app.get("/", (req, res) => {
             <h3>Fazer Chamada Inteligente</h3>
             <form action="/make-call" method="POST">
               <input type="tel" name="to" placeholder="+5521988392219" value="+5521988392219" required>
+              <textarea name="issue" placeholder="Descreva o problema que o usuário precisa resolver..." rows="3" required>Preciso de ajuda para configurar meu email no celular</textarea>
               <button type="submit">📞 Chamar com IA</button>
             </form>
-            <p><small>O Gemini irá responder em tempo real suas mensagens</small></p>
+            <p><small>O Gemini irá personalizar a conversa com base no problema</small></p>
           </div>
           
           <div class="card">
             <h3>Status do Sistema</h3>
             <p>Sessões ativas: <strong>${activeSessions.size}</strong></p>
+            <p>Issues pendentes: <strong>${pendingIssues.size}</strong></p>
             <a href="/health">Ver Health Check</a>
           </div>
         </div>
@@ -575,5 +618,6 @@ process.on("SIGTERM", () => {
   console.log("🔻 Encerrando servidor...");
   activeSessions.forEach(session => session.cleanup());
   activeSessions.clear();
+  pendingIssues.clear();
   server.close(() => process.exit(0));
 });
