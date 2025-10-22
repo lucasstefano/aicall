@@ -329,10 +329,10 @@ Destaque a gravidade e a necessidade de ação imediata.
 Inclua referência aos dados: {user_service}, {remote_ip}`
       },
       
-      'malware': {
-        system: `Você é um especialista em resposta a incidentes de MALWARE.
+      'ransomware': {
+        system: `Você é um especialista em resposta a incidentes de RANSOMWARE.
 DADOS DO INCIDENTE:
-- Tipo: Infecção por Malware
+- Tipo: Infecção por Ransomware
 - Severidade: CRÍTICA  
 - Host Origem: {host_origin}
 - IP Remoto: {remote_ip}
@@ -341,77 +341,36 @@ DADOS DO INCIDENTE:
 
 Instruções específicas:
 - Priorize isolamento do sistema infectado
-- Oriente sobre scan de antivírus e remoção
-- Alerte sobre possível exfiltração de dados
+- Oriente sobre verificação de backups
+- Alerte sobre possível criptografia de dados
 - Explique procedimentos de quarentena
 - Mantenha tom de extrema urgência
-- Foque em contenção e mitigação`,
-        welcome: `Crie uma mensagem crítica sobre infecção por MALWARE para {nome}.
+- Foque em contenção e recuperação`,
+        welcome: `Crie uma mensagem crítica sobre infecção por RANSOMWARE para {nome}.
 Enfatize a necessidade de isolamento imediato do sistema.
 Mencione: {host_origin}, {remote_ip}`
       },
       
-      'ddos': {
-        system: `Você é um especialista em mitigação de ataques DDoS.
+      'exfiltration': {
+        system: `Você é um especialista em proteção de dados e detecção de exfiltração.
 DADOS DO INCIDENTE:
-- Tipo: Ataque DDoS
+- Tipo: Exfiltração de Dados
 - Severidade: ALTA
-- IP Remoto: {remote_ip} 
-- Porta/Protocolo: {port_protocol}
-- Volumes: {volumes}
-- Serviço: {user_service}
-
-Instruções específicas:
-- Foque em mitigação do tráfego malicioso
-- Oriente sobre ativação de proteções DDoS
-- Explique mudanças temporárias de roteamento
-- Mantenha calma mas aja rapidamente
-- Priorize disponibilidade do serviço`,
-        welcome: `Crie uma mensagem sobre ataque DDoS em andamento para {nome}.
-Destaque a mitigação em progresso e impacto no serviço.
-Refira-se a: {remote_ip}, {volumes}`
-      },
-      
-      'access': {
-        system: `Você é um especialista em controle de acesso e identidade.
-DADOS DO INCIDENTE:
-- Tipo: Acesso Não Autorizado
-- Severidade: MÉDIA-ALTA
 - Usuário/Serviço: {user_service}
 - Host Origem: {host_origin}
 - IP Remoto: {remote_ip}
-- Evidências: {evidence}
-
-Instruções específicas:
-- Foque em revogação de acessos comprometidos
-- Oriente sobre reset de credenciais
-- Explique verificação de logs de acesso
-- Alerte sobre possíveis privilégios elevados
-- Mantenha foco em contenção de acesso`,
-        welcome: `Crie uma mensagem sobre acesso não autorizado detectado para {nome}.
-Aborde a revogação de acessos e investigação em curso.
-Dados: {user_service}, {host_origin}`
-      },
-      
-      'data': {
-        system: `Você é um especialista em proteção de dados e privacidade.
-DADOS DO INCIDENTE:
-- Tipo: Vazamento de Dados
-- Severidade: CRÍTICA
 - Volumes: {volumes}
-- Endpoints: {urls}
 - Evidências: {evidence}
-- Observação: {critical_note}
 
 Instruções específicas:
-- Priorize contenção do vazamento
-- Oriente sobre notificação legal se aplicável
-- Explique procedimentos de preservação de evidências
-- Mantenha tom de extrema seriedade
-- Foque em minimizar impacto e conformidade`,
-        welcome: `Crie uma mensagem crítica sobre vazamento de dados para {nome}.
-Enfatize a gravidade e ações imediatas de contenção.
-Refira-se a: {volumes}, {critical_note}`
+- Foque em contenção da exfiltração
+- Oriente sobre revogação de credenciais
+- Explique verificação de permissões de acesso
+- Alerte sobre possível vazamento de dados sensíveis
+- Mantenha tom urgente e investigativo`,
+        welcome: `Crie uma mensagem sobre possível exfiltração de dados para {nome}.
+Destaque a transferência anômala e necessidade de ação.
+Refira-se a: {user_service}, {volumes}`
       },
       
       'default': {
@@ -594,9 +553,10 @@ const sttConfig = {
     useEnhanced: true,
     speechContexts: [{
       phrases: [
-        "phishing", "malware", "ddos", "ataque", "segurança", "incidente",
+        "phishing", "ransomware", "exfiltration", "ataque", "segurança", "incidente",
         "firewall", "antivírus", "quarentena", "isolamento", "mitigação",
-        "acesso", "credenciais", "senha", "vazamento", "dados", "criptografia"
+        "acesso", "credenciais", "senha", "vazamento", "dados", "criptografia",
+        "backup", "exfiltração", "credenciais", "macros", "malicioso"
       ],
       boost: 10.0
     }]
@@ -958,64 +918,61 @@ app.post("/twiml", (req, res) => {
 // 🔥 DADOS PRÉ-DEFINIDOS PARA CADA TIPO DE ATAQUE
 const SECURITY_INCIDENTS = {
   'phishing': {
-    attack_type: 'phishing',
-    severity: 'ALTA',
-    user_service: 'usuário@empresa.com',
+    data: '2025-10-22',
+    hora_utc3: '09:18',
+    attack_type: 'Phishing',
+    severity: 'ALTO',
+    user_service: 'joao.souza@empresa.com',
     host_origin: 'WORKSTATION-045',
-    remote_ip: '192.168.1.45',
-    port_protocol: '443/HTTPS',
-    volumes: '2.3 MB transferidos',
-    urls: 'phishing-scam.com/login, malicious-page.net/verify',
-    evidence: 'E-mail de phishing detectado, credenciais capturadas',
-    critical_note: 'Credenciais corporativas potencialmente comprometidas'
+    ip_origem_cliente: '10.10.45.21',
+    ip_origem_remoto: '185.62.128.44',
+    ip_destino: '172.16.2.12',
+    port_protocol: '443 / HTTPS',
+    urls: 'hxxps://secure-empresa-login[.]com/login',
+    signatures_iocs: 'URL detectado por gateway de e-mail; HTTP POST para /auth com payload contendo username e password; user-agent: Mozilla/5.0 (Windows NT 10.0)',
+    hashes_anexos: 'invoice_0922.doc (detected macro) — SHA256: fa3b...9c2',
+    evidence: 'Logs de proxy mostram POST com credenciais; gateway e-mail marcou como suspicious but delivered; endpoint AV flagged macro attempt',
+    critical_note: 'Usuário informou via chat que "clicou no link e inseriu a senha" — ação imediata necessária.',
+    // Propriedades mapeadas para compatibilidade
+    remote_ip: '185.62.128.44',
+    volumes: 'Credenciais potencialmente comprometidas',
+    critical_note: 'Usuário informou via chat que "clicou no link e inseriu a senha" — ação imediata necessária.'
   },
-  'malware': {
-    attack_type: 'malware',
-    severity: 'CRÍTICA',
-    user_service: 'SERVIDOR-FILE01',
-    host_origin: 'SRV-FILE-01',
-    remote_ip: '10.20.30.45',
-    port_protocol: '8080/TCP',
-    volumes: '150 MB exfiltrados',
-    urls: 'C&C: malware-command.com/beacon',
-    evidence: 'Processo suspeito svchost-mal.exe, conexões anômalas',
-    critical_note: 'Possível ransomware em fase inicial'
+
+  'ransomware': {
+    data: '2025-10-22',
+    hora_utc3: '02:44 (início de atividade) / Alerta SOC 02:51',
+    attack_type: 'ransomware',
+    severity: 'CRÍTICO',
+    host_afetado: 'srv-finance-03.corp.local (10.20.5.73)',
+    ip_origem_host_interno: '10.20.5.73',
+    ips_remotos: '45.77.123.9 (C2 beacon), 104.21.12.34 (exfil endpoint possível)',
+    port_protocol: '445 (SMB) + 443 outbound (TLS)',
+    processos: 'evil-encryptor.exe iniciado como filho de schtasks.exe — C:\\Users\\Public\\temp\\evil-encryptor.exe',
+    evidence: 'EDR detectou criação massiva de arquivos .enc; volume shadow copies deletadas; logs mostram acessos a shares \\\\fileserver\\finance',
+    hash_binario: 'b4c2...e11',
+    critical_note: 'Backups aumentaram I/O mas última cópia incremental foi ontem às 00:30 — verificar integridade.',
+    // Propriedades mapeadas para compatibilidade
+    user_service: 'srv-finance-03.corp.local',
+    host_origin: 'srv-finance-03.corp.local',
+    remote_ip: '45.77.123.9, 104.21.12.34',
+    volumes: 'Dados financeiros criptografados',
+    urls: 'C2: 45.77.123.9, Exfil: 104.21.12.34'
   },
-  'ddos': {
-    attack_type: 'ddos',
-    severity: 'ALTA',
-    user_service: 'WEBSERVER-PROD',
-    host_origin: 'LB-PROD-01',
-    remote_ip: '203.0.113.1-203.0.113.254',
-    port_protocol: '80/HTTP, 443/HTTPS',
-    volumes: '15 Gbps, 2M pps',
-    urls: 'api.empresa.com/v1, www.empresa.com',
-    evidence: 'Padrão de tráfego SYN flood identificado',
-    critical_note: 'Serviços web com latência elevada'
-  },
-  'access': {
-    attack_type: 'access',
-    severity: 'MÉDIA-ALTA',
-    user_service: 'admin@empresa.com',
-    host_origin: 'AD-SERVER-01',
-    remote_ip: '198.51.100.23',
-    port_protocol: '3389/RDP',
-    volumes: 'Vários logs de acesso falho',
-    urls: 'vpn.empresa.com, remote.empresa.com',
-    evidence: 'Tentativas de brute force no serviço RDP',
-    critical_note: 'Possível tentativa de acesso privilegiado'
-  },
-  'data': {
-    attack_type: 'data',
-    severity: 'CRÍTICA',
-    user_service: 'DB-PROD-01',
-    host_origin: 'DATABASE-SRV',
-    remote_ip: '172.16.1.100',
-    port_protocol: '1433/TCP',
-    volumes: '650 MB de dados sensíveis',
-    urls: 'N/A (transferência direta)',
-    evidence: 'Consulta massiva a tabelas de clientes e PII',
-    critical_note: 'Dados pessoais identificáveis potencialmente expostos'
+
+  'exfiltration': {
+    data: '2025-10-21',
+    hora_utc3: '23:05 → 23:12',
+    attack_type: 'exfiltration',
+    severity: 'ALTO',
+    user_service: 'svc-integration@empresa.com',
+    host_origin: 'app-integration-01 (10.30.8.14)',
+    remote_ip: '52.216.12.78 (provedor de object storage)',
+    port_protocol: '443 (HTTPS)',
+    volumes: '~18 GB em ~7 minutos (multipart uploads)',
+    urls: 'https://s3-external[.]example/upload/part',
+    evidence: 'Logs de firewall e proxy mostram POSTs autenticados com chave API AKIA...; comportamento anômalo vs baseline (200–500 MB/dia)',
+    critical_note: 'Service account com acesso a sensitive-bucket (PIIs) — verificar abuso de credenciais ou vazamento.'
   }
 };
 
@@ -1069,6 +1026,10 @@ app.post("/make-call", async (req, res) => {
     const datetime = getCurrentDateTime();
     const baseIncident = SECURITY_INCIDENTS[incidentType];
     
+    if (!baseIncident) {
+      return res.status(400).json({ error: "Tipo de incidente inválido" });
+    }
+
     const securityData = {
       nome: nome,
       ...datetime,
@@ -1123,7 +1084,8 @@ app.get("/health", (req, res) => {
     timestamp: new Date().toISOString(),
     active_sessions: activeSessions.size,
     pending_incidents: pendingSecurityData.size,
-    features: ["STT", "Gemini AI", "Google TTS", "Resposta a incidentes", "Dados completos de segurança"]
+    features: ["STT", "Gemini AI", "Google TTS", "Resposta a incidentes", "Dados completos de segurança"],
+    incident_types: ["phishing", "ransomware", "exfiltration"]
   });
 });
 
@@ -1200,10 +1162,8 @@ app.get("/", (req, res) => {
             box-shadow: 0 8px 25px rgba(0,0,0,0.4);
           }
           .incident-card.phishing { border-color: #ff6b6b; }
-          .incident-card.malware { border-color: #ffa726; }
-          .incident-card.ddos { border-color: #4fc3f7; }
-          .incident-card.access { border-color: #ba68c8; }
-          .incident-card.data { border-color: #4db6ac; }
+          .incident-card.ransomware { border-color: #ffa726; }
+          .incident-card.exfiltration { border-color: #4fc3f7; }
           
           .incident-card.selected { 
             background: linear-gradient(135deg, #2a3a4f, #3a4a5f);
@@ -1276,21 +1236,17 @@ app.get("/", (req, res) => {
           function getSeverityClass(type) {
             const severityMap = {
               'phishing': 'high',
-              'malware': 'critical', 
-              'ddos': 'high',
-              'access': 'medium',
-              'data': 'critical'
+              'ransomware': 'critical', 
+              'exfiltration': 'high'
             };
             return severityMap[type];
           }
           
           function getSeverityText(type) {
             const textMap = {
-              'phishing': 'ALTA',
-              'malware': 'CRÍTICA',
-              'ddos': 'ALTA',
-              'access': 'MÉDIA-ALTA',
-              'data': 'CRÍTICA'
+              'phishing': 'ALTO',
+              'ransomware': 'CRÍTICO',
+              'exfiltration': 'ALTO'
             };
             return textMap[type];
           }
@@ -1365,66 +1321,38 @@ app.get("/", (req, res) => {
                 <div class="incident-details">
                   <div>📅 Data: ${getCurrentDateTime().date}</div>
                   <div>⏰ Hora: ${getCurrentDateTime().time} UTC-3</div>
-                  <div>👤 Usuário: usuario@empresa.com</div>
+                  <div>👤 Usuário: joao.souza@empresa.com</div>
                   <div>🌐 Host: WORKSTATION-045</div>
-                  <div>📍 IP: 192.168.1.45</div>
+                  <div>📍 IP: 185.62.128.44</div>
                   <div>⚠️ Risco: Credenciais comprometidas</div>
                 </div>
               </div>
               
-              <div class="incident-card malware" onclick="selectIncident('malware', 'Infecção por Malware')">
+              <div class="incident-card ransomware" onclick="selectIncident('ransomware', 'Infecção por Ransomware')">
                 <div class="incident-icon">🦠</div>
-                <h4>Infecção por Malware</h4>
-                <div class="severity severity-critical">CRÍTICA</div>
+                <h4>Infecção por Ransomware</h4>
+                <div class="severity severity-critical">CRÍTICO</div>
                 <div class="incident-details">
                   <div>📅 Data: ${getCurrentDateTime().date}</div>
                   <div>⏰ Hora: ${getCurrentDateTime().time} UTC-3</div>
-                  <div>🖥️ Servidor: SRV-FILE-01</div>
-                  <div>📍 IP: 10.20.30.45</div>
-                  <div>📊 Dados: 150 MB exfiltrados</div>
-                  <div>🚨 Alerta: Possível ransomware</div>
+                  <div>🖥️ Servidor: srv-finance-03.corp.local</div>
+                  <div>📍 IP: 10.20.5.73</div>
+                  <div>📊 Dados: Arquivos criptografados</div>
+                  <div>🚨 Alerta: Ransomware ativo</div>
                 </div>
               </div>
               
-              <div class="incident-card ddos" onclick="selectIncident('ddos', 'Ataque DDoS')">
-                <div class="incident-icon">🌊</div>
-                <h4>Ataque DDoS</h4>
+              <div class="incident-card exfiltration" onclick="selectIncident('exfiltration', 'Exfiltração de Dados')">
+                <div class="incident-icon">💾</div>
+                <h4>Exfiltração de Dados</h4>
                 <div class="severity severity-high">ALTA SEVERIDADE</div>
                 <div class="incident-details">
                   <div>📅 Data: ${getCurrentDateTime().date}</div>
                   <div>⏰ Hora: ${getCurrentDateTime().time} UTC-3</div>
-                  <div>🌐 Serviço: WEBSERVER-PROD</div>
-                  <div>📡 IPs: 203.0.113.1-254</div>
-                  <div>💥 Tráfego: 15 Gbps</div>
-                  <div>⚠️ Impacto: Serviços com latência</div>
-                </div>
-              </div>
-              
-              <div class="incident-card access" onclick="selectIncident('access', 'Acesso Não Autorizado')">
-                <div class="incident-icon">🔐</div>
-                <h4>Acesso Não Autorizado</h4>
-                <div class="severity severity-medium">MÉDIA-ALTA</div>
-                <div class="incident-details">
-                  <div>📅 Data: ${getCurrentDateTime().date}</div>
-                  <div>⏰ Hora: ${getCurrentDateTime().time} UTC-3</div>
-                  <div>👤 Conta: admin@empresa.com</div>
-                  <div>🖥️ Servidor: AD-SERVER-01</div>
-                  <div>📍 IP: 198.51.100.23</div>
-                  <div>🚨 Tentativa: Brute force RDP</div>
-                </div>
-              </div>
-              
-              <div class="incident-card data" onclick="selectIncident('data', 'Vazamento de Dados')">
-                <div class="incident-icon">💾</div>
-                <h4>Vazamento de Dados</h4>
-                <div class="severity severity-critical">CRÍTICA</div>
-                <div class="incident-details">
-                  <div>📅 Data: ${getCurrentDateTime().date}</div>
-                  <div>⏰ Hora: ${getCurrentDateTime().time} UTC-3</div>
-                  <div>🗄️ Banco: DB-PROD-01</div>
-                  <div>📍 IP: 172.16.1.100</div>
-                  <div>📊 Volume: 650 MB sensíveis</div>
-                  <div>🚨 Dados: PII expostos</div>
+                  <div>👤 Serviço: svc-integration@empresa.com</div>
+                  <div>🖥️ Host: app-integration-01</div>
+                  <div>📊 Volume: 18 GB transferidos</div>
+                  <div>🚨 Risco: Dados sensíveis</div>
                 </div>
               </div>
             </div>
@@ -1492,7 +1420,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`📁 Áudios servidos em: ${baseUrl}/audio/`);
   console.log(`🔗 Health: http://localhost:${PORT}/health`);
   console.log(`🎯 Sistema: Resposta a incidentes ATIVADA`);
-  console.log(`🚨 Tipos de incidentes: phishing, malware, ddos, access, data`);
+  console.log(`🚨 Tipos de incidentes: phishing, ransomware, exfiltration`);
 });
 
 server.on("upgrade", (req, socket, head) => {
