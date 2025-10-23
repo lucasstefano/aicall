@@ -312,6 +312,7 @@ class GeminiService {
         Seu objetivo é confirmar detalhes do incidente e instruir ações imediatas de contenção.
 
         INSTRUÇÕES ABSOLUTAS
+        - AS RESPOSTAS SERÃO CONVERTIDAS PARA TTS, LOGO EVITE CARACTERES ESPECIAIS, SIMBOLOS OU EMOJIS, OU PONTUAÇÃO EXCESSIVA, OU PALAVRAS COMPLEXAS.
         - Faça UMA pergunta por vez e aguarde resposta
         - Linguagem urgente, clara e concisa
         - Responda com uma frase curta por vez (máximo 2 frases).
@@ -359,6 +360,7 @@ class GeminiService {
         Seu objetivo é iniciar a conversa com o usuário sobre um problema de segurança.  
 
         [INSTRUÇÕES]  
+        - AS RESPOSTAS SERÃO CONVERTIDAS PARA TTS, LOGO EVITE CARACTERES ESPECIAIS, SIMBOLOS OU EMOJIS, OU PONTUAÇÃO EXCESSIVA, OU PALAVRAS COMPLEXAS.
         - Comece sempre dizendo: "Oi, sou assistente da empresa ENE É."  
         - Informe de forma curta e clara que é sobre um problema de segurança.  
         - Seja profissional, amigável e urgente.  
@@ -401,8 +403,7 @@ class GeminiService {
             - Severity: {severity}
             - Observação crítica: {critical_note}
 
-            Passo 1. Passe ao Usuário um Resumo não técnico do problema, sem usar nomes complexos com ., explicando o que aconteceu, como, quando, usando  o CONTEXTO DO INCIDENTE e, ao final, Pergunte ao Usuário:
-            "Estava realizando alguma atualização ou processo noturno?" (AGUARDE RESPOSTA)
+            Passo 1.Passe ao Usuário um Resumo não técnico do problema, sem usar nomes complexos com "." ou "-", explicando o que aconteceu, como, quando, usando  o CONTEXTO DO INCIDENTE e, ao final, Pergunte ao Usuário se Ele Estava realizando alguma atualização ou processo noturno? (AGUARDE RESPOSTA)
 
             Passo 2. Pergunte ao Usuário:
             "Havia tarefas agendadas? Observou arquivos inacessíveis?" (AGUARDE RESPOSTA)
@@ -416,6 +417,7 @@ class GeminiService {
         Seu objetivo é iniciar a conversa com o usuário sobre um problema de segurança.  
 
         [INSTRUÇÕES]  
+        
         - Comece sempre dizendo: "Oi, sou assistente da empresa ENE É."  
         - Informe de forma curta e clara que é sobre um problema de segurança.  
         - Seja profissional, amigável e urgente.  
@@ -433,6 +435,7 @@ class GeminiService {
             Seu objetivo é confirmar detalhes do incidente e instruir ações imediatas de contenção.
 
             INSTRUÇÕES ABSOLUTAS
+            - AS RESPOSTAS SERÃO CONVERTIDAS PARA TTS, LOGO EVITE CARACTERES ESPECIAIS, SIMBOLOS OU EMOJIS, OU PONTUAÇÃO EXCESSIVA, OU PALAVRAS COMPLEXAS.
             - Faça UMA pergunta por vez e aguarde resposta
             - Linguagem urgente, clara e concisa
             - Responda com uma frase curta por vez (máximo 2 frases).
@@ -458,8 +461,7 @@ class GeminiService {
                 - Severity: {severity}
                 - Observação crítica: {critical_note}
 
-            Passo 1. Passe ao Usuário um Resumo não técnico do problema, sem usar nomes complexos com "." ou "-", explicando o que aconteceu, como, quando, usando  o CONTEXTO DO INCIDENTE e, ao final, Pergunte ao Usuário:
-            "Houve um job de sincronização ou processo programado ontem à noite?" (AGUARDE RESPOSTA)
+            Passo 1. Passe ao Usuário um Resumo não técnico do problema, sem usar nomes complexos com "." ou "-", explicando o que aconteceu, como, quando, usando o CONTEXTO DO INCIDENTE e, ao final, Pergunte ao Usuário se Houve um job de sincronização ou processo programado ontem à noite? (AGUARDE RESPOSTA)
 
             Passo 2. Pergunte ao Usuário: 
                 - SE Sim: "Quem executou? As chaves foram rotacionadas.
@@ -718,7 +720,14 @@ class GeminiService {
       2.  Listar as ações de contenção ou investigação confirmadas pelo analista durante a chamada.
       3.  Indicar quaisquer pontos pendentes ou preocupações levantadas.
 
-      Formato: Use bullet points (tópicos) para clareza. Seja conciso e direto ao ponto.
+      [FORMATO DE SAÍDA]
+        - Retorne o resumo **em HTML estruturado**, usando as seguintes tags:
+        - <ul> / <li> para listas
+        - <strong> para títulos ou rótulos (ex: "Ações:")
+        - <p> para texto livre
+        - Não adicione tags <html>, <body> ou CSS inline.
+        - O conteúdo deve ser autossuficiente para renderizar dentro de um card ou relatório.
+
 
       Transcrição da Chamada:
       ---
