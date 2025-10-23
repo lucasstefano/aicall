@@ -164,34 +164,34 @@ class ConversationLogger {
       const securityData = conversation.securityData;
 
       const summaryPrompt = `
-        ANÁLISE DE CONVERSA DE SEGURANÇA - RELATÓRIO FINAL
+ANÁLISE DE CONVERSA DE SEGURANÇA - RELATÓRIO FINAL
 
-        INCIDENTE: ${securityData.attack_type}
-        SEVERIDADE: ${securityData.severity}
-        RESPONSÁVEL: ${securityData.nome}
+INCIDENTE: ${securityData.attack_type}
+SEVERIDADE: ${securityData.severity}
+RESPONSÁVEL: ${securityData.nome}
 
-        CONTEXTO DO INCIDENTE:
-        - Tipo: ${securityData.attack_type}
-        - Usuário/Serviço: ${securityData.user_service}
-        - Host: ${securityData.host_origin}
-        - IPs Envolvidos: ${securityData.remote_ip}
-        - Evidências: ${securityData.evidence}
+CONTEXTO DO INCIDENTE:
+- Tipo: ${securityData.attack_type}
+- Usuário/Serviço: ${securityData.user_service}
+- Host: ${securityData.host_origin}
+- IPs Envolvidos: ${securityData.remote_ip}
+- Evidências: ${securityData.evidence}
 
-        DIÁLOGO COMPLETO:
-        ${dialogText}
+DIÁLOGO COMPLETO:
+${dialogText}
 
-        INSTRUÇÕES:
-        Analise a conversa acima e gere um relatório estruturado com:
+INSTRUÇÕES:
+Analise a conversa acima e gere um relatório estruturado com:
 
-        1. STATUS DO INCIDENTE: Confirmado / False Positive / Em Investigação
+1. STATUS DO INCIDENTE: Confirmado / False Positive / Em Investigação
 
-        2. AÇÕES TOMADAS: Lista de ações realizadas pelo analista
+2. AÇÕES TOMADAS: Lista de ações realizadas pelo analista
 
-        3. DECISÕES: Contenção aplicada e próximos passos
+3. DECISÕES: Contenção aplicada e próximos passos
 
-        4. CLASSIFICAÇÃO DE RISCO: Baixo / Médio / Alto / Crítico
+4. CLASSIFICAÇÃO DE RISCO: Baixo / Médio / Alto / Crítico
 
-        Formate a resposta em markdown claro e objetivo.
+Formate a resposta em markdown claro e objetivo.
       `;
 
       const result = await generativeModel.generateContent(summaryPrompt);
@@ -299,18 +299,18 @@ class ConversationLogger {
     const securityData = conversation.securityData;
     
     return `
-        RELATÓRIO DE INCIDENTE - SafeCall AI
+RELATÓRIO DE INCIDENTE - SafeCall AI
 
-        INCIDENTE: ${securityData.attack_type}
-        SEVERIDADE: ${securityData.severity}
-        ANALISTA: ${securityData.nome}
-        DATA: ${conversation.startTime.toLocaleDateString('pt-BR')}
+INCIDENTE: ${securityData.attack_type}
+SEVERIDADE: ${securityData.severity}
+ANALISTA: ${securityData.nome}
+DATA: ${conversation.startTime.toLocaleDateString('pt-BR')}
 
-        RESUMO:
-        ${conversation.summary || 'Resumo não disponível'}
+RESUMO:
+${conversation.summary || 'Resumo não disponível'}
 
-        DIÁLOGO:
-        ${dialogText}
+DIÁLOGO:
+${dialogText}
     `;
   }
 
