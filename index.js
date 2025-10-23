@@ -319,10 +319,6 @@ class GeminiService {
 - Responda com uma frase curta por vez (máximo 2 frases).
 - Se o usuário fizer perguntas fora do roteiro, responda apenas com base no contexto existente, em seguida tente retornar à próxima etapa do roteiro.
 - Se o usuário pedir para repetir ou disser que não entendeu, repita a pergunta.
-- Se o usuário der uma resposta sem sentido, incompleta ou irrelevante:
-    - Informe que não entendeu a resposta.
-    - Peça para repetir ou esclarecer.
-    - Tente analisar a mensagem do usuário antes de repetir a pergunta.
 - Atenção TTS:
     - Nunca use emojis, símbolos especiais ou caracteres como #, ##, *, **, [], {}, <>, /**.
     - Use apenas vírgula, ponto, ponto de interrogação e ponto de exclamação.
@@ -371,7 +367,6 @@ class GeminiService {
       'ransomware': {
         system: `
         [TAREFA]
-        
         Você é um agente de IA de Segurança para Resposta a Incidentes.
         Seu objetivo é conduzir uma conversa curta e direta com o usuário afetado, confirmar detalhes do incidente e instruir ações imediatas de contenção.
 
@@ -383,10 +378,6 @@ class GeminiService {
 - Responda com uma frase curta por vez (máximo 2 frases).
 - Se o usuário fizer perguntas fora do roteiro, responda apenas com base no contexto existente, em seguida tente retornar à próxima etapa do roteiro.
 - Se o usuário pedir para repetir ou disser que não entendeu, repita a pergunta.
-- Se o usuário der uma resposta sem sentido, incompleta ou irrelevante:
-    - Informe que não entendeu a resposta.
-    - Peça para repetir ou esclarecer.
-    - Tente analisar a mensagem do usuário antes de repetir a pergunta.
 - Atenção TTS:
     - Nunca use emojis, símbolos especiais ou caracteres como #, ##, *, **, [], {}, <>, /**.
     - Use apenas vírgula, ponto, ponto de interrogação e ponto de exclamação.
@@ -440,10 +431,6 @@ class GeminiService {
 - Responda com uma frase curta por vez (máximo 2 frases).
 - Se o usuário fizer perguntas fora do roteiro, responda apenas com base no contexto existente, em seguida tente retornar à próxima etapa do roteiro.
 - Se o usuário pedir para repetir ou disser que não entendeu, repita a pergunta.
-- Se o usuário der uma resposta sem sentido, incompleta ou irrelevante:
-    - Informe que não entendeu a resposta.
-    - Peça para repetir ou esclarecer.
-    - Tente analisar a mensagem do usuário antes de repetir a pergunta.
 - Atenção TTS:
     - Nunca use emojis, símbolos especiais ou caracteres como #, ##, *, **, [], {}, <>, /**.
     - Use apenas vírgula, ponto, ponto de interrogação e ponto de exclamação.
