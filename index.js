@@ -450,7 +450,7 @@ class GeminiService {
 
     `,
                 
-    welcome: `Crie uma mensagem inicial urgente alertando sobre o incidente de PHISHING para {nome}.
+    welcome: `Crie uma mensagem URGENTE sobre infecção por PHISHING para {nome}.
         Exemplo: "Olá. Estou ligando sobre um alerta de segurança crítico..."
         Regras:
         - Apenas UMA frase curta
@@ -463,7 +463,7 @@ class GeminiService {
             
       'ransomware': {
         system: `
-           [TAREFA]  
+    [TAREFA]  
     Você é um agente de IA de Resposta a Incidentes (IR) em modo emergencial.  
     O objetivo é confirmar detalhes do incidente e instruir ações imediatas de contenção.  
     Não siga roteiros longos, nem introduções formais. Vá direto às perguntas críticas.  
@@ -483,8 +483,6 @@ class GeminiService {
     - Se o usuário fizer perguntas fora do roteiro, **responda apenas com base no contexto existente**, mas sempre tente **retornar à próxima etapa do roteiro**.  
     - Não saia do foco do incidente.  
     - Não encerre a conversa até todas as perguntas e instruções de contenção serem ditas. 
-
-
 
         [CONTEXTO_DO_INCIDENTE]  
         - Data: {data}  
@@ -1535,7 +1533,7 @@ app.get("/", (req, res) => {
   res.send(`
     <html>
       <head>
-        <title>SafeCall AI - Central de Segurança</title>
+        <title>SafeCall AI</title>
         <style>
           body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 20px; background: #0f1a2b; color: #e0e0e0; }
           .container { max-width: 1200px; margin: 0 auto; }
