@@ -6,7 +6,7 @@ import textToSpeech from "@google-cloud/text-to-speech";
 import { VertexAI } from '@google-cloud/vertexai';
 import { writeFileSync, unlinkSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
-import nodemailer from "nodemailer";
+import nodemailer from 'nodemailer';
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
@@ -22,8 +22,12 @@ const baseUrl = process.env.BASE_URL;
 
 // Validação de variáveis de ambiente
 const requiredEnvVars = [
-  'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_PHONE_NUMBER',
-  'BASE_URL', 'GCLOUD_PROJECT', 'GCLOUD_LOCATION'
+ 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_PHONE_NUMBER',
+ 'BASE_URL', 'GCLOUD_PROJECT', 'GCLOUD_LOCATION',
+ // 👇 ADICIONE ESTAS LINHAS
+ 'EMAIL_USER',       // ex: 'seu-email@gmail.com'
+ 'EMAIL_PASS',       // ex: 'sua-senha-de-app'
+ 'SUMMARY_EMAIL_RECIPIENT' // ex: 'email-do-soc@suaempresa.com'
 ];
 
 requiredEnvVars.forEach(envVar => {
@@ -44,6 +48,71 @@ if (!existsSync(audioDir)) {
 }
 
 // =============================
+// 📧 Configuração de E-mail (Nodemailer)
+// =============================
+const mailTransporter = nodemailer.createTransport({
+    service: "gmail",
+ auth: {
+  user: process.env.EMAIL_USER,
+  pass: process.env.EMAIL_PASS, // Para Gmail, use uma "Senha de App"
+ },
+});
+
+
+mailTransporter.verify((error, success) => {
+ if (error) {
+  console.error('❌ Erro na configuração do Nodemailer:', error);
+ } else {
+  console.log('✅ Servidor de e-mail pronto para enviar resumos.');
+ }
+});
+
+/**
+ * Envia um e-mail com o resumo da chamada.
+ */
+async function sendSummaryEmail(callSid, summary, securityData) {
+ const recipient = process.env.SUMMARY_EMAIL_RECIPIENT;
+ const { nome, attack_type, severity, data, hora_utc3, user_service, host_origin, remote_ip } = securityData;
+
+ const subject = `Resumo [${severity}] - Incidente de ${attack_type} (CallSid: ${callSid})`;
+ 
+ const htmlBody = `
+  <html>
+   <body style="font-family: Arial, sans-serif; line-height: 1.6;">
+    <h2>Resumo da Chamada de Incidente de Segurança</h2>
+    <p><strong>CallSid:</strong> ${callSid}</p>
+    <p><strong>Analista Contatado:</strong> ${nome}</p>
+    <p><strong>Tipo de Incidente:</strong> ${attack_type} (Severidade: ${severity})</p>
+    <p><strong>Data/Hora:</strong> ${data} às ${hora_utc3}</p>
+    <hr>
+    <h3>Resumo da Interação (IA)</h3>
+    <pre style="background: #f4f4f4; padding: 15px; border-radius: 5px; white-space: pre-wrap; font-family: monospace;">${summary}</pre>
+    <hr>
+    <h3>Detalhes do Alerta Original</h3>
+    <ul style="list-style-type: disc; margin-left: 20px;">
+     <li><strong>Usuário/Serviço:</strong> ${user_service || 'N/A'}</li>
+     <li><strong>Host Origem:</strong> ${host_origin || 'N/A'}</li>
+     <li><strong>IP Remoto:</strong> ${remote_ip || 'N/A'}</li>
+    </ul>
+   </body>
+  </html>
+ `;
+
+ try {
+  const info = await mailTransporter.sendMail({
+   from: `"SafeCall AI" <${process.env.EMAIL_USER}>`,
+   to: recipient,
+   subject: subject,
+   html: htmlBody,
+  });
+  console.log(`✅ Resumo por e-mail enviado [${callSid}]: ${info.messageId}`);
+ } catch (error) {
+  console.error(`❌ Erro ao enviar e-mail [${callSid}]:`, error);
+  throw error; // Repassa o erro
+ }
+}
+
+// =============================
 // 🧠 Configuração Vertex AI Gemini
 // =============================
 const vertex_ai = new VertexAI({
@@ -51,9 +120,9 @@ const vertex_ai = new VertexAI({
   location: process.env.GCLOUD_LOCATION,
 });
 
-const model = 'gemini-1.5-flash-001';
-const generativeModel = vertex_ai.preview.getGenerativeModel({
-  model: model,
+const model = 'gemini-2.0-flash-001';
+const generativeModel = vertex_ai.getGenerativeModel({
+  model,
   generationConfig: {
     maxOutputTokens: 256,
     temperature: 0.2,
@@ -67,7 +136,7 @@ const generativeModel = vertex_ai.preview.getGenerativeModel({
 const ttsConfig = {
   voice: {
     languageCode: 'pt-BR',
-    name: "pt-BR-Neural2-A",
+    name: "pt-BR-Chirp3-HD-Leda",
     ssmlGender: 'FEMALE'
   },
   audioConfig: {
@@ -78,130 +147,6 @@ const ttsConfig = {
     volumeGainDb: 0.0
   }
 };
-
-// =============================
-// 📧 Logger Simples com Resumo Gemini
-// =============================
-class SimpleConversationLogger {
-  constructor() {
-    this.conversations = new Map();
-    this.transporter = nodemailer.createTransporter({
-      service: "gmail",
-      auth: {
-        user: process.env.EMAIL_USER || "lucas.stefano@xpandai.ai",
-        pass: process.env.EMAIL_PASS || "dqxz szfd kewn pwmf",
-      },
-    });
-  }
-
-  // 🔥 INICIAR CONVERSA
-  startConversation(callSid, securityData) {
-    this.conversations.set(callSid, {
-      messages: [],
-      securityData: securityData
-    });
-    console.log(`📝 Conversa iniciada [${callSid}]`);
-  }
-
-  // 🔥 ADICIONAR MENSAGEM
-  addMessage(callSid, speaker, message) {
-    try {
-      if (!this.conversations.has(callSid)) return;
-
-      const conversation = this.conversations.get(callSid);
-      const timestamp = new Date().toLocaleTimeString('pt-BR');
-      
-      conversation.messages.push(`[${timestamp}] ${speaker.toUpperCase()}: ${message}`);
-      
-      console.log(`📝 [${speaker.toUpperCase()}] ${callSid}: ${message.substring(0, 50)}...`);
-      
-    } catch (error) {
-      console.error(`❌ Erro logando mensagem [${callSid}]:`, error);
-    }
-  }
-
-  // 🔥 GERAR RESUMO COM GEMINI
-  async generateSummary(conversationText, securityData) {
-    try {
-      const prompt = `
-Analise esta conversa sobre um incidente de segurança e crie um resumo executivo para email.
-
-INCIDENTE: ${securityData.attack_type}
-RESPONSÁVEL: ${securityData.nome}
-SEVERIDADE: ${securityData.severity}
-
-CONVERSA:
-${conversationText}
-
-Crie um resumo em português com:
-1. Situação atual do incidente
-2. Ações tomadas pelo analista
-3. Próximos passos recomendados
-4. Nível de risco atual
-
-Máximo: 3-4 parágrafos curtos. Tom profissional.
-      `;
-
-      const result = await generativeModel.generateContent(prompt);
-      const response = result.response;
-      return response.candidates[0].content.parts[0].text.trim();
-      
-    } catch (error) {
-      console.error('❌ Erro gerando resumo Gemini:', error);
-      return '⚠️ Não foi possível gerar resumo automático. Verifique a conversa completa abaixo.';
-    }
-  }
-
-  // 🔥 ENVIAR EMAIL COM RESUMO
-  async sendEmailWithSummary(callSid) {
-    try {
-      const conversation = this.conversations.get(callSid);
-      if (!conversation || conversation.messages.length === 0) return;
-
-      const { securityData, messages } = conversation;
-      const conversationText = messages.join('\n');
-      
-      // 🔥 GERAR RESUMO COM GEMINI
-      console.log(`🤖 Gerando resumo Gemini para [${callSid}]...`);
-      const summary = await this.generateSummary(conversationText, securityData);
-      
-      // Criar email com resumo + conversa completa
-      const emailText = `
-RESUMO DO INCIDENTE DE SEGURANÇA
-
-${summary}
-
---- DETALHES DA CONVERSA ---
-${conversationText}
-
-Incidente: ${securityData.attack_type}
-Responsável: ${securityData.nome}
-Severidade: ${securityData.severity}
-Call SID: ${callSid}
-      `;
-
-      const mailOptions = {
-        from: `"SafeCall AI" <${process.env.EMAIL_USER || "lucas.stefano@xpandai.ai"}>`,
-        to: "lucasstefanof@gmail.com",
-        subject: `🔒 Resumo: ${securityData.attack_type} - ${securityData.nome}`,
-        text: emailText
-      };
-
-      console.log(`📧 Enviando email com resumo para [${callSid}]`);
-      
-      await this.transporter.sendMail(mailOptions);
-      console.log(`✅ Email com resumo enviado [${callSid}]`);
-      
-      // Limpar conversa
-      this.conversations.delete(callSid);
-      
-    } catch (error) {
-      console.error(`❌ Erro enviando email [${callSid}]:`, error);
-    }
-  }
-}
-
-const conversationLogger = new SimpleConversationLogger();
 
 // =============================
 // 🎯 Sistema de Fila para Respostas
@@ -784,6 +729,68 @@ Baseie-se na severidade {severity} e dados fornecidos.`
     this.userData.delete(callSid);
     console.log(`🧹 Histórico de segurança limpo para [${callSid}]`);
   }
+  async generateSummary(callSid) {
+    const history = this.getConversationHistory(callSid);
+    const securityData = this.userData.get(callSid);
+
+    if (!history || history.length === 0 || !securityData) {
+      console.log(`⚠️ Sem histórico ou dados para resumir [${callSid}]`);
+      return null;
+    }
+
+    // Formatar o bloco de texto como você pediu
+    let conversationText = "";
+    history.forEach(([userMessage, assistantResponse]) => {
+      // Usamos o nome do analista dos dados de segurança
+      conversationText += `[${securityData.nome || 'Usuário'}]: ${userMessage}\n`;
+      conversationText += `[Agente IA]: ${assistantResponse}\n`;
+    });
+
+    const prompt = `
+      Tarefa: Você é um analista de segurança sênior. Resuma a seguinte transcrição de uma chamada de resposta a incidente.
+
+      Contexto do Incidente:
+      - Tipo: ${securityData.attack_type}
+      - Severidade: ${securityData.severity}
+      - Analista: ${securityData.nome}
+
+      Objetivo do Resumo:
+      1.  Identificar o reconhecimento do incidente pelo analista.
+      2.  Listar as ações de contenção ou investigação confirmadas pelo analista durante a chamada.
+      3.  Indicar quaisquer pontos pendentes ou preocupações levantadas.
+
+      Formato: Use bullet points (tópicos) para clareza. Seja conciso e direto ao ponto.
+
+      Transcrição da Chamada:
+      ---
+      ${conversationText}
+      ---
+
+      Resumo Executivo da Chamada:
+    `;
+
+    try {
+      console.log(`🧠 Gemini [${callSid}] - Solicitando resumo da chamada...`);
+      
+      // Usamos o generativeModel global
+      const result = await generativeModel.generateContent(prompt);
+      const response = result.response;
+      
+      if (!response.candidates || !response.candidates[0]) {
+        throw new Error('Resposta de resumo vazia do Gemini');
+      }
+      
+      const summary = response.candidates[0].content.parts[0].text.trim();
+      
+      console.log(`✅ Resumo gerado [${callSid}]: ${summary.substring(0, 100)}...`);
+      return summary;
+      
+    } catch (error) {
+      console.error(`❌ Erro ao gerar resumo com Gemini [${callSid}]:`, error);
+      return "Erro ao gerar o resumo da chamada.";
+    }
+  }
+
 }
 
 const geminiService = new GeminiService();
@@ -797,7 +804,7 @@ const sttConfig = {
     sampleRateHertz: 8000,
     languageCode: "pt-BR",
     enableAutomaticPunctuation: true,
-    model: "default",
+    model: "phone_call",
     useEnhanced: true,
     speechContexts: [{
       phrases: [
@@ -811,7 +818,7 @@ const sttConfig = {
   },
   interimResults: true,
   interimResultsThreshold: 0.3,
-  singleUtterance: false,
+  single_utterance: false,
   noSpeechTimeout: 60,
   enableVoiceActivityEvents: true
 };
@@ -835,12 +842,6 @@ class AudioStreamSession {
     this.lastActivityTime = Date.now();
     
     console.log(`🎧 Nova sessão de segurança: ${callSid}, Nome: ${securityData?.nome}, Tipo: ${securityData?.attack_type}`);
-    
-    // 🔥 INICIAR REGISTRO DA CONVERSA
-    if (securityData) {
-      conversationLogger.startConversation(callSid, securityData);
-    }
-    
     this.setupSTT();
     this.startHealthCheck();
     this.resetInactivityTimer();
@@ -966,15 +967,9 @@ class AudioStreamSession {
     this.geminiProcessing = true;
 
     try {
-      // 🔥 LOG USER
-      conversationLogger.addMessage(this.callSid, 'USER', transcript);
-      
       const geminiResponse = await geminiService.generateResponse(this.callSid, transcript);
       
       if (geminiResponse && geminiResponse.length > 2) {
-        // 🔥 LOG GEMINI
-        conversationLogger.addMessage(this.callSid, 'GEMINI', geminiResponse);
-        
         responseQueue.addResponse(this.callSid, geminiResponse);
       } else {
         console.log(`⚠️ Resposta Gemini vazia para [${this.callSid}]`);
@@ -1019,12 +1014,6 @@ class AudioStreamSession {
       this.sttStream.destroy();
       this.sttStream = null;
     }
-
-    // 🔥 ENVIAR EMAIL COM RESUMO GEMINI
-    conversationLogger.sendEmailWithSummary(this.callSid)
-      .catch(error => {
-        console.error(`❌ Erro email [${this.callSid}]:`, error);
-      });
 
     geminiService.cleanup(this.callSid);
     responseQueue.cleanup(this.callSid);
@@ -1329,15 +1318,45 @@ app.post("/make-call", async (req, res) => {
 // =============================
 // 🌐 Webhooks e Monitoramento
 // =============================
-app.post("/call-status", (req, res) => {
+app.post("/call-status", async (req, res) => { // 👈 TORNE A FUNÇÃO "async"
   const { CallSid, CallStatus } = req.body;
   console.log(`📞 Status [${CallStatus}]: ${CallSid}`);
   
   if (['completed', 'failed', 'busy'].includes(CallStatus)) {
+    
+    // 🔥 NOVO: LÓGICA DE RESUMO E E-MAIL
+    // Verificamos se existe um histórico de conversa para este CallSid
+    if (geminiService.conversationHistory.has(CallSid)) {
+      console.log(`📊 Iniciando processo de resumo e e-mail para [${CallSid}]...`);
+      try {
+        // 1. Pega os dados ANTES de qualquer limpeza
+        const securityData = geminiService.userData.get(CallSid);
+        
+        // 2. Gera o resumo
+        const summary = await geminiService.generateSummary(CallSid);
+        
+        // 3. Envia o e-mail
+        if (summary && securityData) {
+          await sendSummaryEmail(CallSid, summary, securityData);
+        } else {
+          console.warn(`⚠️ Resumo ou dados de segurança não encontrados para [${CallSid}]. E-mail não enviado.`);
+        }
+      } catch (err) {
+        console.error(`❌ Erro fatal no processo de resumo/e-mail [${CallSid}]:`, err);
+        // O processo continua para a limpeza, mesmo se o e-mail falhar
+      }
+    }
+    // FIM DA LÓGICA DE E-MAIL
+
+    // 4. Limpeza (executa APÓS tentar enviar o e-mail)
     if (activeSessions.has(CallSid)) {
       const session = activeSessions.get(CallSid);
-      session.cleanup();
+      session.cleanup(); // session.cleanup() chama geminiService.cleanup()
       activeSessions.delete(CallSid);
+    } else {
+      // Garante a limpeza do histórico do gemini mesmo se a sessão WS já caiu
+      geminiService.cleanup(CallSid);
+      responseQueue.cleanup(CallSid);
     }
     pendingSecurityData.delete(CallSid);
   }
@@ -1356,6 +1375,35 @@ app.get("/health", (req, res) => {
   });
 });
 
+app.get("/conversation-data/:callSid", (req, res) => {
+ const { callSid } = req.params;
+
+ if (!callSid) {
+  return res.status(400).json({ error: "CallSid é obrigatório" });
+ }
+
+ const history = geminiService.getConversationHistory(callSid);
+ const userData = geminiService.userData.get(callSid);
+
+ if (!history && !userData) {
+  return res.status(404).json({ 
+   error: "Nenhum dado de conversa encontrado para este CallSid.",
+   callSid: callSid
+  });
+ }
+
+ // Formata o histórico para facilitar a leitura
+ const formattedHistory = history.map(([userMessage, assistantResponse]) => ({
+  user: userMessage,
+  assistant: assistantResponse
+ }));
+
+ res.json({
+  callSid: callSid,
+  incidentDetails: userData || "Dados do incidente não encontrados (possivelmente já limpos)",
+  conversationHistory: formattedHistory || "Histórico vazio"
+ });
+});
 // Middleware de segurança
 app.use((req, res, next) => {
   const clientIP = req.ip || req.connection.remoteAddress;
@@ -1689,7 +1737,6 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🔗 Health: http://localhost:${PORT}/health`);
   console.log(`🎯 Sistema: Resposta a incidentes ATIVADA`);
   console.log(`🚨 Tipos de incidentes: phishing, ransomware, exfiltration`);
-  console.log(`📧 Email: Logs com resumo Gemini ativado`);
 });
 
 server.on("upgrade", (req, socket, head) => {
