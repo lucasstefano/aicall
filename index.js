@@ -50,11 +50,12 @@ if (!existsSync(audioDir)) {
 // =============================
 // 📧 Configuração de E-mail (Nodemailer)
 // =============================
+
 const mailTransporter = nodemailer.createTransport({
     service: "gmail",
  auth: {
   user: process.env.EMAIL_USER,
-  pass: process.env.EMAIL_PASS, // Para Gmail, use uma "Senha de App"
+  pass: process.env.EMAIL_PASS, 
  },
 });
 
