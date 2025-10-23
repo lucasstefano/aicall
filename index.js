@@ -640,7 +640,7 @@ class GeminiService {
       if (!securityData) {
         throw new Error('Dados de segurança não encontrados');
       }
-      
+    
       const { nome, attack_type, severity, user_service, host_origin, remote_ip,
         data, hora_utc3, ip_origem_cliente, ip_origem_remoto, ip_destino, 
         port_protocol, urls, signatures_iocs, hashes_anexos, evidence, 
@@ -652,7 +652,8 @@ class GeminiService {
       const prompt = this.buildSecurityPrompt(userMessage, recentHistory, securityData);
       
       console.log(`🧠 Gemini [${callSid} - ${attack_type} - ${severity}]: "${userMessage.substring(0, 50)}..."`);
-      
+      console.log(`🎯 DEBUG - Attack Type: ${securityData?.attack_type}`);
+      console.log(`🎯 DEBUG - Prompt Config:`, this.securityPrompts[securityData?.attack_type] ? 'ENCONTRADO' : 'USANDO DEFAULT');
       const result = await generativeModel.generateContent(prompt);
       const response = result.response;
       
@@ -1498,14 +1499,6 @@ app.post("/cancel-call", async (req, res) => {
 // =============================
 // 🎯 Página HTML com Incidentes de Segurança
 // =============================
-// =============================
-// 📊 Armazenamento de Resumos
-// =============================
-const callSummaries = new Map();
-
-// =============================
-// 🎯 Página HTML com Incidentes de Segurança e Resumos
-// =============================
 app.get("/", (req, res) => {
   res.send(`
     <html>
@@ -1517,7 +1510,6 @@ app.get("/", (req, res) => {
           .card { background: #1a2a3f; padding: 25px; margin: 20px 0; border-radius: 15px; border: 1px solid #2a3a4f; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
           button { background: #007bff; color: white; padding: 15px 30px; border: none; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: 600; transition: 0.3s; width: 100%; }
           button:hover { background: #0056b3; transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,123,255,0.4); }
-          button:disabled { background: #6c757d; cursor: not-allowed; transform: none; box-shadow: none; }
           input { width: 100%; padding: 15px; margin: 10px 0; border: 1px solid #2a3a4f; border-radius: 8px; font-size: 16px; box-sizing: border-box; background: #2a3a4f; color: white; }
           .incidents-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin: 25px 0; }
           .incident-card { 
@@ -1578,50 +1570,6 @@ app.get("/", (req, res) => {
           .form-group { margin: 20px 0; }
           label { display: block; margin-bottom: 8px; color: #a0a0a0; font-weight: 600; }
           
-          .summary-section { 
-            margin-top: 30px; 
-            padding: 20px; 
-            background: #2a3a4f; 
-            border-radius: 8px; 
-            border-left: 4px solid #007bff;
-          }
-          
-          .summary-item { 
-            margin: 15px 0; 
-            padding: 15px; 
-            background: #1a2a3f; 
-            border-radius: 8px; 
-            border: 1px solid #3a4a5f;
-          }
-          
-          .summary-header { 
-            display: flex; 
-            justify-content: between; 
-            margin-bottom: 10px; 
-            font-weight: bold;
-          }
-          
-          .summary-content { 
-            white-space: pre-wrap; 
-            font-family: monospace; 
-            font-size: 14px; 
-            line-height: 1.4;
-          }
-          
-          .loading { 
-            text-align: center; 
-            padding: 20px; 
-            color: #ffc107; 
-            font-style: italic;
-          }
-          
-          .empty-state { 
-            text-align: center; 
-            padding: 40px; 
-            color: #6c757d; 
-            font-style: italic;
-          }
-          
           @media (max-width: 768px) {
             .incidents-grid { grid-template-columns: 1fr; }
             .container { padding: 10px; }
@@ -1629,8 +1577,6 @@ app.get("/", (req, res) => {
         </style>
         <script>
           let selectedIncident = 'phishing';
-          let currentCallSid = null;
-          let callStatus = 'idle'; // idle, calling, active, completed
           
           function selectIncident(type, name) {
             const cards = document.querySelectorAll('.incident-card');
@@ -1670,7 +1616,7 @@ app.get("/", (req, res) => {
             return textMap[type];
           }
           
-          async function makeCall() {
+          function makeCall() {
             const nome = document.getElementById('nome').value;
             const telefone = document.getElementById('telefone').value;
             
@@ -1679,151 +1625,31 @@ app.get("/", (req, res) => {
               return;
             }
             
-            if (callStatus !== 'idle') {
-              alert('Já existe uma chamada em andamento!');
-              return;
-            }
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/make-call';
             
-            // Atualizar UI para estado de chamada
-            updateCallStatus('calling');
+            const nomeInput = document.createElement('input');
+            nomeInput.type = 'hidden';
+            nomeInput.name = 'nome';
+            nomeInput.value = nome;
             
-            try {
-              const response = await fetch('/make-call', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: new URLSearchParams({
-                  nome: nome,
-                  to: telefone,
-                  incident_type: selectedIncident
-                })
-              });
-              
-              const data = await response.json();
-              
-              if (response.ok) {
-                currentCallSid = data.sid;
-                updateCallStatus('active');
-                
-                // Iniciar monitoramento do resumo
-                startSummaryPolling(data.sid);
-                
-                // Atualizar status a cada 2 segundos
-                const statusInterval = setInterval(async () => {
-                  if (callStatus === 'completed') {
-                    clearInterval(statusInterval);
-                    return;
-                  }
-                  
-                  try {
-                    const statusResponse = await fetch('/call-status-check?callSid=' + currentCallSid);
-                    const statusData = await statusResponse.json();
-                    
-                    if (statusData.status === 'completed') {
-                      updateCallStatus('completed');
-                      clearInterval(statusInterval);
-                    }
-                  } catch (error) {
-                    console.error('Erro verificando status:', error);
-                  }
-                }, 2000);
-                
-              } else {
-                throw new Error(data.error || 'Erro ao iniciar chamada');
-              }
-              
-            } catch (error) {
-              console.error('Erro na chamada:', error);
-              alert('Erro ao iniciar chamada: ' + error.message);
-              updateCallStatus('idle');
-            }
-          }
-          
-          function updateCallStatus(status) {
-            callStatus = status;
-            const callButton = document.getElementById('callButton');
-            const statusDisplay = document.getElementById('callStatus');
+            const telInput = document.createElement('input');
+            telInput.type = 'hidden';
+            telInput.name = 'to';
+            telInput.value = telefone;
             
-            switch(status) {
-              case 'idle':
-                callButton.textContent = '🚨 INICIAR CHAMADA DE EMERGÊNCIA';
-                callButton.disabled = false;
-                statusDisplay.innerHTML = '<div style="color: #6c757d;">Pronto para iniciar chamada</div>';
-                break;
-              case 'calling':
-                callButton.textContent = '📞 CONECTANDO...';
-                callButton.disabled = true;
-                statusDisplay.innerHTML = '<div style="color: #ffc107;">🔄 Iniciando chamada de segurança...</div>';
-                break;
-              case 'active':
-                callButton.textContent = '📞 CHAMADA EM ANDAMENTO';
-                callButton.disabled = true;
-                statusDisplay.innerHTML = '<div style="color: #28a745;">✅ Chamada ativa - Conversando com o analista...</div>';
-                break;
-              case 'completed':
-                callButton.textContent = '🔄 NOVA CHAMADA';
-                callButton.disabled = false;
-                statusDisplay.innerHTML = '<div style="color: #17a2b8;">✅ Chamada finalizada - Verifique o resumo abaixo</div>';
-                break;
-            }
-          }
-          
-          function startSummaryPolling(callSid) {
-            const interval = setInterval(async () => {
-              if (callStatus === 'completed') {
-                clearInterval(interval);
-                return;
-              }
-              
-              try {
-                const response = await fetch('/call-summary?callSid=' + callSid);
-                const data = await response.json();
-                
-                if (data.summary) {
-                  displaySummary(callSid, data.summary, data.incidentDetails);
-                }
-                
-                // Se a chamada foi completada no servidor, atualizar status
-                if (data.status === 'completed' && callStatus !== 'completed') {
-                  updateCallStatus('completed');
-                  clearInterval(interval);
-                }
-              } catch (error) {
-                console.error('Erro buscando resumo:', error);
-              }
-            }, 3000);
-          }
-          
-          function displaySummary(callSid, summary, incidentDetails) {
-            const summaryContainer = document.getElementById('summaryContainer');
-            const existingSummary = document.getElementById('summary-' + callSid);
+            const incidentInput = document.createElement('input');
+            incidentInput.type = 'hidden';
+            incidentInput.name = 'incident_type';
+            incidentInput.value = selectedIncident;
             
-            if (existingSummary) {
-              // Atualizar resumo existente
-              existingSummary.querySelector('.summary-content').textContent = summary;
-            } else {
-              // Criar novo resumo
-              const summaryItem = document.createElement('div');
-              summaryItem.className = 'summary-item';
-              summaryItem.id = 'summary-' + callSid;
-              
-              summaryItem.innerHTML = \`
-                <div class="summary-header">
-                  <span>📞 Chamada: \${callSid}</span>
-                  <span>🚨 \${incidentDetails.attack_type} - \${incidentDetails.severity}</span>
-                </div>
-                <div class="summary-content">\${summary}</div>
-                <div style="margin-top: 10px; font-size: 12px; color: #6c757d;">
-                  👤 Analista: \${incidentDetails.nome} | 📅 \${new Date().toLocaleString()}
-                </div>
-              \`;
-              
-              summaryContainer.insertBefore(summaryItem, summaryContainer.firstChild);
-            }
+            form.appendChild(nomeInput);
+            form.appendChild(telInput);
+            form.appendChild(incidentInput);
             
-            // Mostrar a seção de resumos se estiver oculta
-            document.getElementById('summariesSection').style.display = 'block';
+            document.body.appendChild(form);
+            form.submit();
           }
           
           function updateStatus() {
@@ -1914,19 +1740,7 @@ app.get("/", (req, res) => {
               <input type="tel" id="telefone" placeholder="21994442087" value="21994442087" required>
             </div>
             
-            <button id="callButton" onclick="makeCall()">🚨 INICIAR CHAMADA DE EMERGÊNCIA</button>
-            <div id="callStatus" style="text-align: center; margin-top: 15px; min-height: 24px;">
-              <div style="color: #6c757d;">Pronto para iniciar chamada</div>
-            </div>
-          </div>
-          
-          <div id="summariesSection" class="card" style="display: none;">
-            <h3>📊 Resumos das Chamadas</h3>
-            <div id="summaryContainer">
-              <div class="empty-state" id="emptySummary">
-                Nenhuma chamada realizada ainda. Os resumos aparecerão aqui automaticamente.
-              </div>
-            </div>
+            <button onclick="makeCall()">🚨 INICIAR CHAMADA DE EMERGÊNCIA</button>
           </div>
           
           <div class="card">
@@ -1945,138 +1759,20 @@ app.get("/", (req, res) => {
             </div>
           </div>
         </div>
+        
+        <script>
+          function getCurrentDateTime() {
+            const now = new Date();
+            now.setHours(now.getHours() - 3);
+            return {
+              date: now.toISOString().split('T')[0],
+              time: now.toTimeString().split(' ')[0]
+            };
+          }
+        </script>
       </body>
     </html>
   `);
-});
-
-// =============================
-// 📊 Novos Endpoints para Resumos
-// =============================
-
-// Endpoint para verificar status da chamada
-app.get("/call-status-check", (req, res) => {
-  const { callSid } = req.query;
-  
-  if (!callSid) {
-    return res.status(400).json({ error: "callSid é obrigatório" });
-  }
-  
-  // Verificar se a chamada ainda está ativa
-  const isActive = activeSessions.has(callSid);
-  const hasSummary = callSummaries.has(callSid);
-  
-  res.json({
-    callSid: callSid,
-    status: isActive ? 'active' : 'completed',
-    hasSummary: hasSummary
-  });
-});
-
-// Endpoint para obter resumo da chamada
-app.get("/call-summary", (req, res) => {
-  const { callSid } = req.query;
-  
-  if (!callSid) {
-    return res.status(400).json({ error: "callSid é obrigatório" });
-  }
-  
-  const summary = callSummaries.get(callSid);
-  const isActive = activeSessions.has(callSid);
-  
-  if (summary) {
-    res.json({
-      callSid: callSid,
-      summary: summary.text,
-      incidentDetails: summary.incidentDetails,
-      status: isActive ? 'active' : 'completed',
-      timestamp: summary.timestamp
-    });
-  } else {
-    res.json({
-      callSid: callSid,
-      summary: null,
-      status: isActive ? 'active' : 'completed'
-    });
-  }
-});
-
-// =============================
-// 🔄 Modificação no Webhook de Status
-// =============================
-app.post("/call-status", async (req, res) => {
-  const { CallSid, CallStatus } = req.body;
-  
-  console.log(`📞 STATUS WEBHOOK: [${CallSid}] -> ${CallStatus}`);
-  
-  if (['completed', 'failed', 'busy', 'no-answer'].includes(CallStatus)) {
-    console.log(`🎯 Processando finalização para [${CallSid}]`);
-    
-    // VERIFICAÇÃO DETALHADA
-    const hasHistory = geminiService.conversationHistory.has(CallSid);
-    const hasUserData = geminiService.userData.has(CallSid);
-    
-    console.log(`📋 Dados disponíveis - Histórico: ${hasHistory}, UserData: ${hasUserData}`);
-    
-    if (hasHistory && hasUserData) {
-      console.log(`📝 INICIANDO PROCESSO DE RESUMO PARA [${CallSid}]`);
-      
-      try {
-        // 1. Gerar resumo
-        console.log(`🧠 Gerando resumo com Gemini...`);
-        const summary = await geminiService.generateSummary(CallSid);
-        console.log(`📝 Resumo gerado: ${summary ? 'SIM' : 'NÃO'}`);
-        
-        if (summary) {
-          // 2. Pegar dados de segurança
-          const securityData = geminiService.userData.get(CallSid);
-          console.log(`🔐 Dados segurança: ${securityData ? 'ENCONTRADOS' : 'NÃO ENCONTRADOS'}`);
-          
-          // 3. Armazenar resumo para exibição na tela
-          if (securityData) {
-            callSummaries.set(CallSid, {
-              text: summary,
-              incidentDetails: securityData,
-              timestamp: new Date().toISOString()
-            });
-            console.log(`✅ RESUMO ARMAZENADO PARA EXIBIÇÃO NA TELA!`);
-          }
-        }
-      } catch (error) {
-        console.error(`❌ ERRO NO PROCESSO DE RESUMO:`, error);
-      }
-    } else {
-      console.log(`⚠️ Dados insuficientes para resumo. Histórico vazio ou chamada muito curta.`);
-    }
-    
-    // Limpeza
-    geminiService.cleanup(CallSid);
-    responseQueue.cleanup(CallSid);
-    activeSessions.delete(CallSid);
-    pendingSecurityData.delete(CallSid);
-  }
-  
-  res.status(200).send("OK");
-});
-
-// Endpoint para limpar resumos antigos
-app.post("/clear-summaries", (req, res) => {
-  const { olderThan } = req.body; // em horas
-  const cutoffTime = Date.now() - (olderThan * 60 * 60 * 1000);
-  
-  let clearedCount = 0;
-  callSummaries.forEach((summary, callSid) => {
-    if (new Date(summary.timestamp).getTime() < cutoffTime) {
-      callSummaries.delete(callSid);
-      clearedCount++;
-    }
-  });
-  
-  res.json({
-    message: `Resumos antigos limpos`,
-    cleared: clearedCount,
-    remaining: callSummaries.size
-  });
 });
 
 // =============================
