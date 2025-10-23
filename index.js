@@ -1319,46 +1319,53 @@ app.post("/make-call", async (req, res) => {
 // =============================
 // 🌐 Webhooks e Monitoramento
 // =============================
-app.post("/call-status", async (req, res) => { // 👈 TORNE A FUNÇÃO "async"
+app.post("/call-status", async (req, res) => {
   const { CallSid, CallStatus } = req.body;
-  console.log(`📞 Status [${CallStatus}]: ${CallSid}`);
   
-  if (['completed', 'failed', 'busy'].includes(CallStatus)) {
+  console.log(`📞 STATUS WEBHOOK: [${CallSid}] -> ${CallStatus}`);
+  console.log(`📊 Body completo:`, JSON.stringify(req.body, null, 2));
+  
+  if (['completed', 'failed', 'busy', 'no-answer'].includes(CallStatus)) {
+    console.log(`🎯 Processando finalização para [${CallSid}]`);
     
-    // 🔥 NOVO: LÓGICA DE RESUMO E E-MAIL
-    // Verificamos se existe um histórico de conversa para este CallSid
-    if (geminiService.conversationHistory.has(CallSid)) {
-      console.log(`📊 Iniciando processo de resumo e e-mail para [${CallSid}]...`);
+    // VERIFICAÇÃO DETALHADA
+    const hasHistory = geminiService.conversationHistory.has(CallSid);
+    const hasUserData = geminiService.userData.has(CallSid);
+    
+    console.log(`📋 Dados disponíveis - Histórico: ${hasHistory}, UserData: ${hasUserData}`);
+    
+    if (hasHistory && hasUserData) {
+      console.log(`📧 INICIANDO PROCESSO DE E-MAIL PARA [${CallSid}]`);
+      
       try {
-        // 1. Pega os dados ANTES de qualquer limpeza
-        const securityData = geminiService.userData.get(CallSid);
-        
-        // 2. Gera o resumo
+        // 1. Gerar resumo
+        console.log(`🧠 Gerando resumo com Gemini...`);
         const summary = await geminiService.generateSummary(CallSid);
+        console.log(`📝 Resumo gerado: ${summary ? 'SIM' : 'NÃO'}`);
         
-        // 3. Envia o e-mail
-        if (summary && securityData) {
-          await sendSummaryEmail(CallSid, summary, securityData);
-        } else {
-          console.warn(`⚠️ Resumo ou dados de segurança não encontrados para [${CallSid}]. E-mail não enviado.`);
+        if (summary) {
+          // 2. Pegar dados de segurança
+          const securityData = geminiService.userData.get(CallSid);
+          console.log(`🔐 Dados segurança: ${securityData ? 'ENCONTRADOS' : 'NÃO ENCONTRADOS'}`);
+          
+          // 3. Enviar e-mail
+          if (securityData) {
+            console.log(`📨 Enviando e-mail para: ${process.env.SUMMARY_EMAIL_RECIPIENT}`);
+            await sendSummaryEmail(CallSid, summary, securityData);
+            console.log(`✅ E-MAIL ENVIADO COM SUCESSO!`);
+          }
         }
-      } catch (err) {
-        console.error(`❌ Erro fatal no processo de resumo/e-mail [${CallSid}]:`, err);
-        // O processo continua para a limpeza, mesmo se o e-mail falhar
+      } catch (error) {
+        console.error(`❌ ERRO NO PROCESSO DE E-MAIL:`, error);
       }
-    }
-    // FIM DA LÓGICA DE E-MAIL
-
-    // 4. Limpeza (executa APÓS tentar enviar o e-mail)
-    if (activeSessions.has(CallSid)) {
-      const session = activeSessions.get(CallSid);
-      session.cleanup(); // session.cleanup() chama geminiService.cleanup()
-      activeSessions.delete(CallSid);
     } else {
-      // Garante a limpeza do histórico do gemini mesmo se a sessão WS já caiu
-      geminiService.cleanup(CallSid);
-      responseQueue.cleanup(CallSid);
+      console.log(`⚠️ Dados insuficientes para e-mail. Histórico vazio ou chamada muito curta.`);
     }
+    
+    // Limpeza
+    geminiService.cleanup(CallSid);
+    responseQueue.cleanup(CallSid);
+    activeSessions.delete(CallSid);
     pendingSecurityData.delete(CallSid);
   }
   
