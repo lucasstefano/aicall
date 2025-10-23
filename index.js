@@ -3,7 +3,7 @@ import twilio from "twilio";
 import WebSocket, { WebSocketServer } from "ws";
 import speech from "@google-cloud/speech";
 import textToSpeech from "@google-cloud/text-to-speech";
-import { GoogleGenAI, Type } from "@google/generative-ai";
+import { GoogleGenAI, Type } from '@google/genai';
 import { writeFileSync, unlinkSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 
