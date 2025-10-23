@@ -6,6 +6,7 @@ import textToSpeech from "@google-cloud/text-to-speech";
 import { VertexAI } from '@google-cloud/vertexai';
 import { writeFileSync, unlinkSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
+import nodemailer from 'nodemailer';
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
@@ -22,7 +23,8 @@ const baseUrl = process.env.BASE_URL;
 // Validação de variáveis de ambiente
 const requiredEnvVars = [
   'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_PHONE_NUMBER',
-  'BASE_URL', 'GCLOUD_PROJECT', 'GCLOUD_LOCATION'
+  'BASE_URL', 'GCLOUD_PROJECT', 'GCLOUD_LOCATION',
+  'SMTP_USER', 'SMTP_PASS', 'REPORT_EMAIL'
 ];
 
 requiredEnvVars.forEach(envVar => {
@@ -77,6 +79,259 @@ const ttsConfig = {
     volumeGainDb: 0.0
   }
 };
+
+// =============================
+// 📝 Sistema de Gravação de Conversas e Email
+// =============================
+class ConversationLogger {
+  constructor() {
+    this.conversations = new Map();
+    this.emailTransporter = this.createEmailTransporter();
+  }
+
+  createEmailTransporter() {
+    return nodemailer.createTransporter({
+      host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      port: process.env.SMTP_PORT || 587,
+      secure: false,
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS
+      }
+    });
+  }
+
+  // 🔥 INICIAR NOVA CONVERSA
+  startConversation(callSid, securityData) {
+    const conversation = {
+      callSid,
+      securityData,
+      startTime: new Date(),
+      dialog: [],
+      summary: null
+    };
+    
+    this.conversations.set(callSid, conversation);
+    console.log(`📝 Iniciando gravação de conversa [${callSid}]`);
+    
+    return conversation;
+  }
+
+  // 🔥 ADICIONAR MENSAGEM AO DIÁLOGO
+  addDialogEntry(callSid, speaker, message) {
+    if (!this.conversations.has(callSid)) return;
+
+    const conversation = this.conversations.get(callSid);
+    
+    const entry = {
+      speaker,
+      message: message.trim()
+    };
+
+    conversation.dialog.push(entry);
+    
+    console.log(`💬 [${speaker.toUpperCase()}] ${callSid}: ${message.substring(0, 80)}...`);
+  }
+
+  // 🔥 FINALIZAR CONVERSA E GERAR RELATÓRIO
+  async finalizeConversation(callSid) {
+    if (!this.conversations.has(callSid)) return;
+
+    const conversation = this.conversations.get(callSid);
+    console.log(`📊 Finalizando conversa [${callSid}]: ${conversation.dialog.length} mensagens`);
+
+    try {
+      // Gerar resumo com Gemini
+      await this.generateConversationSummary(callSid);
+      
+      // Enviar email com relatório
+      await this.sendEmailReport(callSid);
+      
+      console.log(`✅ Relatório enviado para [${callSid}]`);
+      
+    } catch (error) {
+      console.error(`❌ Erro finalizando conversa [${callSid}]:`, error);
+    }
+  }
+
+  // 🔥 GERAR RESUMO DA CONVERSA COM GEMINI
+  async generateConversationSummary(callSid) {
+    const conversation = this.conversations.get(callSid);
+    if (!conversation) return;
+
+    try {
+      const dialogText = this.formatDialogForSummary(conversation.dialog);
+      const securityData = conversation.securityData;
+
+      const summaryPrompt = `
+        ANÁLISE DE CONVERSA DE SEGURANÇA - RELATÓRIO FINAL
+
+        INCIDENTE: ${securityData.attack_type}
+        SEVERIDADE: ${securityData.severity}
+        RESPONSÁVEL: ${securityData.nome}
+
+        CONTEXTO DO INCIDENTE:
+        - Tipo: ${securityData.attack_type}
+        - Usuário/Serviço: ${securityData.user_service}
+        - Host: ${securityData.host_origin}
+        - IPs Envolvidos: ${securityData.remote_ip}
+        - Evidências: ${securityData.evidence}
+
+        DIÁLOGO COMPLETO:
+        ${dialogText}
+
+        INSTRUÇÕES:
+        Analise a conversa acima e gere um relatório estruturado com:
+
+        1. STATUS DO INCIDENTE: Confirmado / False Positive / Em Investigação
+
+        2. AÇÕES TOMADAS: Lista de ações realizadas pelo analista
+
+        3. DECISÕES: Contenção aplicada e próximos passos
+
+        4. CLASSIFICAÇÃO DE RISCO: Baixo / Médio / Alto / Crítico
+
+        Formate a resposta em markdown claro e objetivo.
+      `;
+
+      const result = await generativeModel.generateContent(summaryPrompt);
+      const response = result.response;
+      
+      if (response.candidates && response.candidates[0]) {
+        conversation.summary = response.candidates[0].content.parts[0].text.trim();
+        console.log(`📋 Resumo Gemini gerado para [${callSid}]`);
+      }
+
+    } catch (error) {
+      console.error(`❌ Erro gerando resumo Gemini [${callSid}]:`, error);
+      conversation.summary = "Erro ao gerar relatório automático.";
+    }
+  }
+
+  // 🔥 FORMATAR DIÁLOGO PARA RESUMO (SIMPLES)
+  formatDialogForSummary(dialog) {
+    return dialog.map(entry => {
+      const speaker = entry.speaker === 'agent' ? 'AGENTE' : 'ANALISTA';
+      return `${speaker}: ${entry.message}`;
+    }).join('\n');
+  }
+
+  // 🔥 ENVIAR RELATÓRIO POR EMAIL
+  async sendEmailReport(callSid) {
+    const conversation = this.conversations.get(callSid);
+    if (!conversation) return;
+
+    const securityData = conversation.securityData;
+    const dialogText = this.formatDialogForEmail(conversation.dialog);
+
+    const emailTemplate = this.createEmailTemplate(conversation, dialogText);
+
+    try {
+      await this.emailTransporter.sendMail({
+        from: process.env.SMTP_FROM || 'security-ai@empresa.com',
+        to: process.env.REPORT_EMAIL || 'soc@empresa.com',
+        subject: `🚨 RELATÓRIO: Incidente ${securityData.attack_type} - ${securityData.nome}`,
+        html: emailTemplate,
+        text: this.createTextVersion(conversation, dialogText)
+      });
+
+      console.log(`📧 Email enviado com sucesso para [${callSid}]`);
+
+    } catch (error) {
+      console.error(`❌ Erro enviando email [${callSid}]:`, error);
+      throw error;
+    }
+  }
+
+  // 🔥 TEMPLATE HTML DO EMAIL (SIMPLIFICADO)
+  createEmailTemplate(conversation, dialogText) {
+    const securityData = conversation.securityData;
+    
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .header { background: #dc3545; color: white; padding: 20px; text-align: center; }
+        .container { max-width: 800px; margin: 0 auto; padding: 20px; }
+        .section { margin: 20px 0; padding: 15px; border-left: 4px solid #007bff; background: #f8f9fa; }
+        .dialog { background: #e9ecef; padding: 15px; border-radius: 5px; font-family: monospace; font-size: 12px; white-space: pre-wrap; }
+        .summary { background: #d4edda; padding: 15px; border-radius: 5px; }
+        .risk-high { color: #dc3545; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🚨 RELATÓRIO DE INCIDENTE</h1>
+        <h2>SafeCall AI - ${securityData.attack_type}</h2>
+    </div>
+    
+    <div class="container">
+        <div class="section">
+            <h3>📋 Informações Básicas</h3>
+            <p><strong>Tipo:</strong> ${securityData.attack_type}</p>
+            <p><strong>Severidade:</strong> <span class="risk-high">${securityData.severity}</span></p>
+            <p><strong>Analista:</strong> ${securityData.nome}</p>
+            <p><strong>Data:</strong> ${conversation.startTime.toLocaleDateString('pt-BR')}</p>
+        </div>
+
+        <div class="section">
+            <h3>📊 Resumo da Análise</h3>
+            <div class="summary">
+                ${conversation.summary ? conversation.summary.replace(/\n/g, '<br>') : 'Resumo não disponível'}
+            </div>
+        </div>
+
+        <div class="section">
+            <h3>💬 Diálogo Completo</h3>
+            <div class="dialog">${dialogText}</div>
+        </div>
+    </div>
+</body>
+</html>
+    `;
+  }
+
+  // 🔥 VERSÃO TEXTO SIMPLES
+  createTextVersion(conversation, dialogText) {
+    const securityData = conversation.securityData;
+    
+    return `
+        RELATÓRIO DE INCIDENTE - SafeCall AI
+
+        INCIDENTE: ${securityData.attack_type}
+        SEVERIDADE: ${securityData.severity}
+        ANALISTA: ${securityData.nome}
+        DATA: ${conversation.startTime.toLocaleDateString('pt-BR')}
+
+        RESUMO:
+        ${conversation.summary || 'Resumo não disponível'}
+
+        DIÁLOGO:
+        ${dialogText}
+    `;
+  }
+
+  // 🔥 FORMATAR DIÁLOGO PARA EMAIL (SIMPLES)
+  formatDialogForEmail(dialog) {
+    return dialog.map(entry => {
+      const speaker = entry.speaker === 'agent' ? 'AGENTE' : 'ANALISTA';
+      return `${speaker}: ${entry.message}`;
+    }).join('\n');
+  }
+
+  // 🔥 LIMPAR CONVERSA
+  cleanup(callSid) {
+    if (this.conversations.has(callSid)) {
+      this.conversations.delete(callSid);
+      console.log(`🧹 Conversa removida [${callSid}]`);
+    }
+  }
+}
+
+const conversationLogger = new ConversationLogger();
 
 // =============================
 // 🎯 Sistema de Fila para Respostas
@@ -709,6 +964,11 @@ class AudioStreamSession {
     this.inactivityTimeout = null;
     this.lastActivityTime = Date.now();
     
+    // 🔥 INICIAR GRAVAÇÃO DA CONVERSA
+    if (securityData) {
+      conversationLogger.startConversation(callSid, securityData);
+    }
+    
     console.log(`🎧 Nova sessão de segurança: ${callSid}, Nome: ${securityData?.nome}, Tipo: ${securityData?.attack_type}`);
     this.setupSTT();
     this.startHealthCheck();
@@ -835,9 +1095,14 @@ class AudioStreamSession {
     this.geminiProcessing = true;
 
     try {
+      // 🔥 GRAVAR PERGUNTA DO USUÁRIO
+      conversationLogger.addDialogEntry(this.callSid, 'user', transcript);
+      
       const geminiResponse = await geminiService.generateResponse(this.callSid, transcript);
       
       if (geminiResponse && geminiResponse.length > 2) {
+        // 🔥 GRAVAR RESPOSTA DO AGENTE
+        conversationLogger.addDialogEntry(this.callSid, 'agent', geminiResponse);
         responseQueue.addResponse(this.callSid, geminiResponse);
       } else {
         console.log(`⚠️ Resposta Gemini vazia para [${this.callSid}]`);
@@ -869,6 +1134,9 @@ class AudioStreamSession {
   cleanup() {
     this.isActive = false;
     
+    // 🔥 FINALIZAR CONVERSA E ENVIAR EMAIL
+    conversationLogger.finalizeConversation(this.callSid);
+    
     if (this.healthCheckInterval) {
       clearInterval(this.healthCheckInterval);
     }
@@ -886,7 +1154,7 @@ class AudioStreamSession {
     geminiService.cleanup(this.callSid);
     responseQueue.cleanup(this.callSid);
     
-    console.log(`🔚 Sessão de segurança finalizada [${this.callSid} - ${this.securityData?.nome}]`);
+    console.log(`🔚 Sessão finalizada [${this.callSid}]`);
   }
 }
 
@@ -944,11 +1212,15 @@ wss.on("connection", (ws, req) => {
             if (securityData) {
               geminiService.generateWelcomeMessage(callSid, securityData)
                 .then(welcomeMessage => {
+                  // 🔥 GRAVAR MENSAGEM DE BOAS-VINDAS DO AGENTE
+                  conversationLogger.addDialogEntry(callSid, 'agent', welcomeMessage);
                   responseQueue.addResponse(callSid, welcomeMessage);
                 })
                 .catch(error => {
                   console.error(`❌ Erro welcome message [${callSid}]:`, error);
-                  responseQueue.addResponse(callSid, `Alerta de segurança para ${securityData.nome}! Incidente ${securityData.attack_type} detectado.`);
+                  const fallbackMessage = `Alerta de segurança para ${securityData.nome}! Incidente ${securityData.attack_type} detectado.`;
+                  conversationLogger.addDialogEntry(callSid, 'agent', fallbackMessage);
+                  responseQueue.addResponse(callSid, fallbackMessage);
                 });
             }
           }
@@ -1175,7 +1447,7 @@ app.post("/make-call", async (req, res) => {
       severity: baseIncident.severity,
       numero_formatado: to,
       datetime: datetime,
-      features: ["STT", "Gemini AI", "Google TTS", "Resposta a incidentes", "Dados de segurança completos"]
+      features: ["STT", "Gemini AI", "Google TTS", "Resposta a incidentes", "Dados de segurança completos", "Relatório por email"]
     });
   } catch (error) {
     console.error("❌ Erro criando chamada de segurança:", error);
@@ -1208,7 +1480,7 @@ app.get("/health", (req, res) => {
     timestamp: new Date().toISOString(),
     active_sessions: activeSessions.size,
     pending_incidents: pendingSecurityData.size,
-    features: ["STT", "Gemini AI", "Google TTS", "Resposta a incidentes", "Dados completos de segurança"],
+    features: ["STT", "Gemini AI", "Google TTS", "Resposta a incidentes", "Dados completos de segurança", "Relatório por email"],
     incident_types: ["phishing", "ransomware", "exfiltration"]
   });
 });
@@ -1543,6 +1815,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🤖 Gemini Model: ${model}`);
   console.log(`🔊 Google TTS: ${ttsConfig.voice.name}`);
   console.log(`📁 Áudios servidos em: ${baseUrl}/audio/`);
+  console.log(`📧 Email: Relatórios para ${process.env.REPORT_EMAIL}`);
   console.log(`🔗 Health: http://localhost:${PORT}/health`);
   console.log(`🎯 Sistema: Resposta a incidentes ATIVADA`);
   console.log(`🚨 Tipos de incidentes: phishing, ransomware, exfiltration`);

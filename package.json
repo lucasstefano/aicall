@@ -14,7 +14,8 @@
     "@google-cloud/text-to-speech": "^5.0.0",
     "@google-cloud/vertexai": "^1.10.0",
     "@google/generative-ai": "^0.24.1",
-    "@google/genai": "latest"
+    "@google/genai": "latest",
+    "nodemailer": "^6.9.15"
     
   }
 }
