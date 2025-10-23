@@ -6,7 +6,6 @@ import textToSpeech from "@google-cloud/text-to-speech";
 import { VertexAI } from '@google-cloud/vertexai';
 import { writeFileSync, unlinkSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
-import nodemailer from 'nodemailer';
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
@@ -991,6 +990,9 @@ const wss = new WebSocketServer({
 const activeSessions = new Map();
 const pendingSecurityData = new Map();
 
+// Armazenar resumos para exibição na tela
+const callSummaries = new Map();
+
 wss.on("connection", (ws, req) => {
   console.log("🎧 Nova conexão WebSocket de segurança");
   let session = null;
@@ -1296,6 +1298,33 @@ app.post("/call-status", async (req, res) => {
     
     console.log(`📋 Dados disponíveis - Histórico: ${hasHistory}, UserData: ${hasUserData}`);
     
+    if (hasHistory && hasUserData) {
+      console.log(`📝 GERANDO RESUMO PARA A TELA [${CallSid}]`);
+      
+      try {
+        const summary = await geminiService.generateSummary(CallSid);
+        const securityData = geminiService.userData.get(CallSid);
+        const history = geminiService.getConversationHistory(CallSid);
+        
+        if (summary && securityData) {
+          // Armazenar o resumo para exibição na tela
+          callSummaries.set(CallSid, {
+            summary: summary,
+            securityData: securityData,
+            conversationHistory: history.map(([user, assistant]) => ({
+              user: user,
+              assistant: assistant
+            })),
+            timestamp: new Date().toISOString()
+          });
+          
+          console.log(`✅ Resumo armazenado para exibição na tela [${CallSid}]`);
+        }
+      } catch (error) {
+        console.error(`❌ Erro gerando resumo para tela [${CallSid}]:`, error);
+      }
+    }
+    
     geminiService.cleanup(CallSid);
     responseQueue.cleanup(CallSid);
     activeSessions.delete(CallSid);
@@ -1305,47 +1334,39 @@ app.post("/call-status", async (req, res) => {
   res.status(200).send("OK");
 });
 
-// Novo endpoint para polling de status
-app.get("/call-status-check", async (req, res) => {
-  const { callSid } = req.query;
+// Endpoint para obter resumo da chamada
+app.get("/call-summary/:callSid", (req, res) => {
+  const { callSid } = req.params;
   
   if (!callSid) {
     return res.status(400).json({ error: "CallSid é obrigatório" });
   }
 
-  try {
-    const call = await client.calls(callSid).fetch();
-    
-    const response = {
-      status: call.status,
-      sid: call.sid,
-      duration: call.duration
-    };
-
-    if (['completed', 'failed', 'busy', 'no-answer'].includes(call.status)) {
-      const history = geminiService.getConversationHistory(callSid);
-      const userData = geminiService.userData.get(callSid);
-      
-      if (history && history.length > 0) {
-        let summary = await geminiService.generateSummary(callSid);
-        
-        response.summary = summary;
-        response.conversationData = {
-          conversationHistory: history.map(([user, assistant]) => ({
-            user: user,
-            assistant: assistant
-          })),
-          incidentDetails: userData
-        };
-      }
-    }
-    
-    res.json(response);
-    
-  } catch (error) {
-    console.error('Erro verificando status:', error);
-    res.status(500).json({ error: error.message });
+  const summaryData = callSummaries.get(callSid);
+  
+  if (!summaryData) {
+    return res.status(404).json({ error: "Resumo não encontrado para esta chamada" });
   }
+
+  res.json(summaryData);
+});
+
+// Endpoint para listar todas as chamadas com resumo
+app.get("/call-summaries", (req, res) => {
+  const summaries = [];
+  
+  callSummaries.forEach((summaryData, callSid) => {
+    summaries.push({
+      callSid: callSid,
+      nome: summaryData.securityData.nome,
+      incident_type: summaryData.securityData.attack_type,
+      severity: summaryData.securityData.severity,
+      timestamp: summaryData.timestamp,
+      summary_preview: summaryData.summary.substring(0, 100) + '...'
+    });
+  });
+
+  res.json(summaries);
 });
 
 app.get("/health", (req, res) => {
@@ -1354,6 +1375,7 @@ app.get("/health", (req, res) => {
     timestamp: new Date().toISOString(),
     active_sessions: activeSessions.size,
     pending_incidents: pendingSecurityData.size,
+    call_summaries: callSummaries.size,
     features: ["STT", "Gemini AI", "Google TTS", "Resposta a incidentes", "Dados completos de segurança"],
     incident_types: ["Phishing", "ransomware", "exfiltration"]
   });
@@ -1417,7 +1439,7 @@ app.post("/cancel-call", async (req, res) => {
 });
 
 // =============================
-// 🎯 Página HTML com Interface Atualizada
+// 🎯 Página HTML com Resumo na Tela
 // =============================
 app.get("/", (req, res) => {
   res.send(`
@@ -1428,7 +1450,7 @@ app.get("/", (req, res) => {
           body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 20px; background: #0f1a2b; color: #e0e0e0; }
           .container { max-width: 1200px; margin: 0 auto; }
           .card { background: #1a2a3f; padding: 25px; margin: 20px 0; border-radius: 15px; border: 1px solid #2a3a4f; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
-          button { background: #007bff; color: white; padding: 15px 30px; border: none; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: 600; transition: 0.3s; width: 100%; }
+          button { background: #007bff; color: white; padding: 15px 30px; border: none; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: 600; transition: 0.3s; }
           button:hover { background: #0056b3; transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,123,255,0.4); }
           input { width: 100%; padding: 15px; margin: 10px 0; border: 1px solid #2a3a4f; border-radius: 8px; font-size: 16px; box-sizing: border-box; background: #2a3a4f; color: white; }
           .incidents-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin: 25px 0; }
@@ -1488,39 +1510,8 @@ app.get("/", (req, res) => {
           .status-pending { background: #856404; color: #fff3cd; border: 1px solid #ffc107; }
           
           .form-group { margin: 20px 0; }
-          label { display: block; margin-bottom: 8px; color: #a0a0a0; font-weight: 600; }
           
-          /* Novos estilos para a interface de chamada */
-          .loading-spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #007bff;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 2s linear infinite;
-            margin: 0 auto;
-          }
-          
-          @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-          }
-          
-          .pulse-animation {
-            width: 20px;
-            height: 20px;
-            background: #28a745;
-            border-radius: 50%;
-            margin: 0 auto;
-            animation: pulse 1.5s infinite;
-          }
-          
-          @keyframes pulse {
-            0% { transform: scale(0.8); opacity: 0.7; }
-            50% { transform: scale(1.2); opacity: 1; }
-            100% { transform: scale(0.8); opacity: 0.7; }
-          }
-          
+          /* Estilos para o resumo */
           .summary-content {
             background: #2a3a4f;
             padding: 20px;
@@ -1552,16 +1543,29 @@ app.get("/", (req, res) => {
             overflow-y: auto;
           }
           
+          .summary-section {
+            display: none;
+          }
+          
+          .summary-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+          }
+          
+          .summary-actions button {
+            flex: 1;
+          }
+          
           @media (max-width: 768px) {
             .incidents-grid { grid-template-columns: 1fr; }
             .container { padding: 10px; }
+            .summary-actions { flex-direction: column; }
           }
         </style>
         <script>
           let selectedIncident = 'Phishing';
           let currentCallSid = null;
-          let callStatus = 'idle';
-          let callSummary = null;
           
           function selectIncident(type, name) {
             const cards = document.querySelectorAll('.incident-card');
@@ -1607,7 +1611,8 @@ app.get("/", (req, res) => {
               return;
             }
 
-            updateCallUI('calling');
+            // Esconder resumo anterior
+            document.getElementById('summarySection').style.display = 'none';
             
             fetch('/make-call', {
                 method: 'POST',
@@ -1620,9 +1625,10 @@ app.get("/", (req, res) => {
             .then(data => {
                 if (data.sid) {
                     currentCallSid = data.sid;
-                    updateCallUI('active');
+                    showCallStatus('Chamada iniciada! Aguardando resposta...');
                     
-                    startCallStatusPolling(data.sid);
+                    // Iniciar verificação do resumo
+                    startSummaryPolling(data.sid);
                 } else {
                     throw new Error(data.error || 'Erro ao iniciar chamada');
                 }
@@ -1630,137 +1636,66 @@ app.get("/", (req, res) => {
             .catch(error => {
                 console.error('Erro:', error);
                 alert('Erro ao iniciar chamada: ' + error.message);
-                updateCallUI('idle');
             });
           }
           
-          function updateCallUI(status) {
-            callStatus = status;
-            const callSection = document.getElementById('callSection');
-            const summarySection = document.getElementById('summarySection');
-            
-            switch(status) {
-                case 'idle':
-                    callSection.innerHTML = \`
-                        <h3>📞 Iniciar Chamada de Emergência</h3>
-                        <div class="form-group">
-                            <label for="nome">👤 Nome do Responsável:</label>
-                            <input type="text" id="nome" placeholder="Digite seu nome completo" value="Daniel Silva" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="telefone">📱 Número de Telefone:</label>
-                            <input type="tel" id="telefone" placeholder="21994442087" value="21994442087" required>
-                        </div>
-                        <button onclick="makeCall()">🚨 INICIAR CHAMADA DE EMERGÊNCIA</button>
-                    \`;
-                    summarySection.style.display = 'none';
-                    break;
-                    
-                case 'calling':
-                    callSection.innerHTML = \`
-                        <h3>📞 Conectando...</h3>
-                        <div style="text-align: center; padding: 40px;">
-                            <div style="font-size: 3em;">📞</div>
-                            <div style="margin: 20px 0;">Iniciando chamada de emergência...</div>
-                            <div class="loading-spinner"></div>
-                        </div>
-                    \`;
-                    break;
-                    
-                case 'active':
-                    callSection.innerHTML = \`
-                        <h3>📞 Chamada em Andamento</h3>
-                        <div style="text-align: center; padding: 30px;">
-                            <div style="font-size: 4em; color: #28a745;">📞</div>
-                            <div style="margin: 20px 0; font-size: 1.2em;">
-                                <strong>Chamada Ativa</strong>
-                            </div>
-                            <div style="margin: 10px 0;">Conversando com o assistente de segurança...</div>
-                            <div class="pulse-animation"></div>
-                            <button onclick="cancelCall()" style="background: #dc3545; margin-top: 20px;">
-                                🛑 Cancelar Chamada
-                            </button>
-                        </div>
-                    \`;
-                    break;
-                    
-                case 'completed':
-                    callSection.innerHTML = \`
-                        <h3>📞 Chamada Finalizada</h3>
-                        <div style="text-align: center; padding: 20px;">
-                            <div style="font-size: 3em;">✅</div>
-                            <div style="margin: 20px 0;">Chamada concluída com sucesso!</div>
-                            <button onclick="resetCall()" style="background: #007bff;">
-                                📞 Nova Chamada
-                            </button>
-                        </div>
-                    \`;
-                    break;
-            }
+          function showCallStatus(message) {
+            const statusDiv = document.getElementById('callStatus');
+            statusDiv.innerHTML = \`
+              <div class="card">
+                <h3>📞 Status da Chamada</h3>
+                <div style="text-align: center; padding: 20px;">
+                  <div style="font-size: 3em;">📞</div>
+                  <div style="margin: 20px 0; font-size: 1.2em;">\${message}</div>
+                  <div class="loading-spinner"></div>
+                </div>
+              </div>
+            \`;
           }
           
-          function cancelCall() {
-            if (currentCallSid) {
-                fetch('/cancel-call', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                    },
-                    body: \`callSid=\${encodeURIComponent(currentCallSid)}\`
-                })
-                .then(() => {
-                    updateCallUI('idle');
-                    currentCallSid = null;
-                });
-            }
-          }
-          
-          function resetCall() {
-            currentCallSid = null;
-            callSummary = null;
-            updateCallUI('idle');
-            document.getElementById('summarySection').style.display = 'none';
-          }
-          
-          function startCallStatusPolling(callSid) {
+          function startSummaryPolling(callSid) {
             const pollInterval = setInterval(() => {
-                fetch(\`/call-status-check?callSid=\${encodeURIComponent(callSid)}\`)
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.status === 'completed' || data.status === 'failed' || data.status === 'busy' || data.status === 'no-answer') {
+                fetch(\`/call-summary/\${callSid}\`)
+                    .then(response => {
+                        if (!response.ok) {
+                            return null;
+                        }
+                        return response.json();
+                    })
+                    .then(summaryData => {
+                        if (summaryData) {
                             clearInterval(pollInterval);
-                            
-                            if (data.status === 'completed' && data.summary) {
-                                showCallSummary(data.summary, data.conversationData);
-                            } else {
-                                updateCallUI('idle');
-                            }
-                            
-                            currentCallSid = null;
+                            showCallSummary(summaryData);
                         }
                     })
                     .catch(error => {
-                        console.error('Erro no polling:', error);
-                        clearInterval(pollInterval);
-                        updateCallUI('idle');
-                        currentCallSid = null;
+                        // Continua polling se não encontrar resumo ainda
                     });
-            }, 2000);
+            }, 3000); // Verifica a cada 3 segundos
+            
+            // Para o polling após 5 minutos
+            setTimeout(() => {
+                clearInterval(pollInterval);
+            }, 300000);
           }
           
-          function showCallSummary(summary, conversationData) {
-            updateCallUI('completed');
-            
+          function showCallSummary(summaryData) {
             const summarySection = document.getElementById('summarySection');
+            const callStatus = document.getElementById('callStatus');
+            
+            // Esconder status da chamada
+            callStatus.innerHTML = '';
+            
+            // Mostrar resumo
             summarySection.style.display = 'block';
             
             let conversationHTML = '';
-            if (conversationData && conversationData.conversationHistory) {
-                conversationData.conversationHistory.forEach((entry, index) => {
+            if (summaryData.conversationHistory && summaryData.conversationHistory.length > 0) {
+                summaryData.conversationHistory.forEach((entry, index) => {
                     conversationHTML += \`
                         <div class="conversation-entry">
                             <div class="user-message">
-                                <strong>\${conversationData.incidentDetails?.nome || 'Usuário'}:</strong> \${entry.user}
+                                <strong>\${summaryData.securityData.nome || 'Usuário'}:</strong> \${entry.user}
                             </div>
                             <div class="assistant-message">
                                 <strong>Assistente IA:</strong> \${entry.assistant}
@@ -1771,11 +1706,21 @@ app.get("/", (req, res) => {
             }
             
             summarySection.innerHTML = \`
-                <h3>📋 Resumo da Chamada</h3>
+                <h3>📋 Resumo da Chamada - \${summaryData.securityData.nome}</h3>
+                <div class="card">
+                    <h4>🎯 Detalhes do Incidente</h4>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 15px 0;">
+                        <div><strong>Tipo:</strong> \${summaryData.securityData.attack_type}</div>
+                        <div><strong>Severidade:</strong> <span class="severity severity-\${getSeverityClass(summaryData.securityData.attack_type)}">\${summaryData.securityData.severity}</span></div>
+                        <div><strong>Usuário:</strong> \${summaryData.securityData.user_service}</div>
+                        <div><strong>Host:</strong> \${summaryData.securityData.host_origin}</div>
+                    </div>
+                </div>
+                
                 <div class="card">
                     <h4>📊 Resumo Executivo</h4>
                     <div class="summary-content">
-                        \${summary}
+                        \${summaryData.summary}
                     </div>
                 </div>
                 
@@ -1786,28 +1731,109 @@ app.get("/", (req, res) => {
                         \${conversationHTML}
                     </div>
                 </div>
-                \` : ''}
+                \` : '<div class="card"><p>Nenhuma transcrição disponível.</p></div>'}
                 
                 <div class="card">
-                    <button onclick="downloadSummary()" style="background: #28a745; margin-right: 10px;">
-                        📥 Exportar Resumo
-                    </button>
-                    <button onclick="resetCall()" style="background: #6c757d;">
-                        🔄 Nova Chamada
-                    </button>
+                    <div class="summary-actions">
+                        <button onclick="downloadSummary('\${currentCallSid}')" style="background: #28a745;">
+                            📥 Exportar Resumo
+                        </button>
+                        <button onclick="newCall()" style="background: #007bff;">
+                            📞 Nova Chamada
+                        </button>
+                        <button onclick="viewAllSummaries()" style="background: #6c757d;">
+                            📋 Ver Todas as Chamadas
+                        </button>
+                    </div>
                 </div>
             \`;
           }
           
-          function downloadSummary() {
-            const summaryContent = document.querySelector('.summary-content').innerText;
-            const blob = new Blob([summaryContent], { type: 'text/plain' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = \`resumo-chamada-\${currentCallSid || 'unknown'}.txt\`;
-            a.click();
-            URL.revokeObjectURL(url);
+          function downloadSummary(callSid) {
+            fetch(\`/call-summary/\${callSid}\`)
+                .then(response => response.json())
+                .then(summaryData => {
+                    const content = \`
+RESUMO DA CHAMADA - SAFECALL AI
+===============================
+
+DATA: \${new Date().toLocaleString()}
+ANALISTA: \${summaryData.securityData.nome}
+INCIDENTE: \${summaryData.securityData.attack_type}
+SEVERIDADE: \${summaryData.securityData.severity}
+
+DETALHES DO INCIDENTE:
+- Usuário/Serviço: \${summaryData.securityData.user_service}
+- Host Origem: \${summaryData.securityData.host_origin}
+- IP Remoto: \${summaryData.securityData.remote_ip}
+
+RESUMO EXECUTIVO:
+\${summaryData.summary}
+
+\${summaryData.conversationHistory && summaryData.conversationHistory.length > 0 ? \`
+TRANSCRIÇÃO DA CONVERSA:
+\${summaryData.conversationHistory.map(entry => \`
+[\${summaryData.securityData.nome}]: \${entry.user}
+[Assistente IA]: \${entry.assistant}
+\`).join('\\n')}
+\` : ''}
+                    \`.trim();
+                    
+                    const blob = new Blob([content], { type: 'text/plain' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = \`resumo-chamada-\${callSid}.txt\`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                });
+          }
+          
+          function newCall() {
+            currentCallSid = null;
+            document.getElementById('summarySection').style.display = 'none';
+            document.getElementById('callStatus').innerHTML = '';
+            // Restaurar formulário original se necessário
+          }
+          
+          function viewAllSummaries() {
+            fetch('/call-summaries')
+                .then(response => response.json())
+                .then(summaries => {
+                    const summarySection = document.getElementById('summarySection');
+                    let summariesHTML = '<h3>📋 Todas as Chamadas Realizadas</h3>';
+                    
+                    if (summaries.length === 0) {
+                        summariesHTML += '<div class="card"><p>Nenhuma chamada realizada ainda.</p></div>';
+                    } else {
+                        summaries.forEach(summary => {
+                            summariesHTML += \`
+                                <div class="card">
+                                    <h4>\${summary.nome} - \${summary.incident_type}</h4>
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0;">
+                                        <div><strong>CallSID:</strong> \${summary.callSid}</div>
+                                        <div><strong>Severidade:</strong> <span class="severity severity-\${getSeverityClass(summary.incident_type)}">\${summary.severity}</span></div>
+                                        <div><strong>Data:</strong> \${new Date(summary.timestamp).toLocaleString()}</div>
+                                    </div>
+                                    <p><strong>Resumo:</strong> \${summary.summary_preview}</p>
+                                    <button onclick="loadSummary('\${summary.callSid}')" style="background: #007bff; margin-top: 10px;">
+                                        🔍 Ver Detalhes
+                                    </button>
+                                </div>
+                            \`;
+                        });
+                    }
+                    
+                    summarySection.innerHTML = summariesHTML;
+                });
+          }
+          
+          function loadSummary(callSid) {
+            fetch(\`/call-summary/\${callSid}\`)
+                .then(response => response.json())
+                .then(summaryData => {
+                    showCallSummary(summaryData);
+                });
           }
           
           function updateStatus() {
@@ -1816,8 +1842,28 @@ app.get("/", (req, res) => {
               .then(data => {
                 document.getElementById('activeSessions').textContent = data.active_sessions;
                 document.getElementById('pendingIncidents').textContent = data.pending_incidents;
+                document.getElementById('callSummaries').textContent = data.call_summaries;
               });
           }
+          
+          // Estilo para loading spinner
+          const style = document.createElement('style');
+          style.textContent = \`
+            .loading-spinner {
+              border: 4px solid #f3f3f3;
+              border-top: 4px solid #007bff;
+              border-radius: 50%;
+              width: 40px;
+              height: 40px;
+              animation: spin 2s linear infinite;
+              margin: 0 auto;
+            }
+            @keyframes spin {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
+            }
+          \`;
+          document.head.appendChild(style);
           
           setInterval(updateStatus, 5000);
           updateStatus();
@@ -1884,7 +1930,7 @@ app.get("/", (req, res) => {
             </div>
           </div>
           
-          <div id="callSection" class="card">
+          <div class="card">
             <h3>📞 Iniciar Chamada de Emergência</h3>
             <div class="form-group">
               <label for="nome">👤 Nome do Responsável:</label>
@@ -1899,13 +1945,17 @@ app.get("/", (req, res) => {
             <button onclick="makeCall()">🚨 INICIAR CHAMADA DE EMERGÊNCIA</button>
           </div>
           
-          <div id="summarySection" style="display: none;">
+          <div id="callStatus">
+            <!-- Status da chamada será mostrado aqui -->
+          </div>
+          
+          <div id="summarySection" class="summary-section">
             <!-- Resumo será injetado aqui -->
           </div>
           
           <div class="card">
             <h3>📊 Status do Sistema</h3>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px;">
               <div style="text-align: center; padding: 20px; background: #2a3a4f; border-radius: 8px;">
                 <div style="font-size: 2em; font-weight: bold; color: #28a745;" id="activeSessions">0</div>
                 <div>Chamadas Ativas</div>
@@ -1915,6 +1965,11 @@ app.get("/", (req, res) => {
                 <div style="font-size: 2em; font-weight: bold; color: #ffc107;" id="pendingIncidents">0</div>
                 <div>Incidentes Pendentes</div>
                 <div class="status-badge status-pending">Monitorando</div>
+              </div>
+              <div style="text-align: center; padding: 20px; background: #2a3a4f; border-radius: 8px;">
+                <div style="font-size: 2em; font-weight: bold; color: #17a2b8;" id="callSummaries">0</div>
+                <div>Resumos Gerados</div>
+                <div class="status-badge status-pending">Histórico</div>
               </div>
             </div>
           </div>
@@ -1936,6 +1991,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🔗 Health: http://localhost:${PORT}/health`);
   console.log(`🎯 Sistema: Resposta a incidentes ATIVADA`);
   console.log(`🚨 Tipos de incidentes: Phishing, ransomware, exfiltration`);
+  console.log(`📋 RESUMOS: Agora aparecem na tela em vez de serem enviados por email`);
 });
 
 server.on("upgrade", (req, socket, head) => {
@@ -1953,5 +2009,6 @@ process.on("SIGTERM", () => {
   activeSessions.forEach(session => session.cleanup());
   activeSessions.clear();
   pendingSecurityData.clear();
+  callSummaries.clear();
   server.close(() => process.exit(0));
 });
