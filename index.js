@@ -377,7 +377,7 @@ class GeminiService {
     
     // 🔥 SISTEMA DE PROMPTS PARA INCIDENTES DE SEGURANÇA
     this.securityPrompts = {
-      'phishing': {
+      'Phishing': {
     system: `
         [TAREFA] Você é um agente de IA de Resposta a Incidentes (IR) em modo emergencial.
         Seu objetivo é confirmar detalhes do incidente e instruir ações imediatas de contenção.
@@ -839,7 +839,7 @@ const sttConfig = {
     useEnhanced: true,
     speechContexts: [{
       phrases: [
-        "phishing", "ransomware", "exfiltration", "ataque", "segurança", "incidente",
+        "Phishing", "ransomware", "exfiltration", "ataque", "segurança", "incidente",
         "firewall", "antivírus", "quarentena", "isolamento", "mitigação",
         "acesso", "credenciais", "senha", "vazamento", "dados", "criptografia",
         "backup", "exfiltração", "credenciais", "macros", "malicioso"
@@ -1186,7 +1186,7 @@ wss.on("connection", (ws, req) => {
 // 🚨 DADOS PRÉ-DEFINIDOS PARA CADA TIPO DE ATAQUE
 // =============================
 const SECURITY_INCIDENTS = {
-  'phishing': {
+  'Phishing': {
     data: '2025-10-22',
     hora_utc3: '09:18',
     attack_type: 'Phishing',
@@ -1289,7 +1289,7 @@ app.post("/twiml", (req, res) => {
 app.post("/make-call", async (req, res) => {
   let to = req.body.to;
   const nome = req.body.nome || "";
-  const incidentType = req.body.incident_type || 'phishing';
+  const incidentType = req.body.incident_type || 'Phishing';
 
   if (!to || !nome) {
     return res.status(400).json({ 
@@ -1421,7 +1421,7 @@ app.get("/health", (req, res) => {
     active_sessions: activeSessions.size,
     pending_incidents: pendingSecurityData.size,
     features: ["STT", "Gemini AI", "Google TTS", "Resposta a incidentes", "Dados completos de segurança"],
-    incident_types: ["phishing", "ransomware", "exfiltration"]
+    incident_types: ["Phishing", "ransomware", "exfiltration"]
   });
 });
 
@@ -1526,7 +1526,7 @@ app.get("/", (req, res) => {
             transform: translateY(-5px);
             box-shadow: 0 8px 25px rgba(0,0,0,0.4);
           }
-          .incident-card.phishing { border-color: #ff6b6b; }
+          .incident-card.Phishing { border-color: #ff6b6b; }
           .incident-card.ransomware { border-color: #ffa726; }
           .incident-card.exfiltration { border-color: #4fc3f7; }
           
@@ -1576,7 +1576,7 @@ app.get("/", (req, res) => {
           }
         </style>
         <script>
-          let selectedIncident = 'phishing';
+          let selectedIncident = 'Phishing';
           
           function selectIncident(type, name) {
             const cards = document.querySelectorAll('.incident-card');
@@ -1600,7 +1600,7 @@ app.get("/", (req, res) => {
           
           function getSeverityClass(type) {
             const severityMap = {
-              'phishing': 'high',
+              'Phishing': 'high',
               'ransomware': 'critical', 
               'exfiltration': 'high'
             };
@@ -1609,7 +1609,7 @@ app.get("/", (req, res) => {
           
           function getSeverityText(type) {
             const textMap = {
-              'phishing': 'ALTO',
+              'Phishing': 'ALTO',
               'ransomware': 'CRÍTICO',
               'exfiltration': 'ALTO'
             };
@@ -1665,9 +1665,9 @@ app.get("/", (req, res) => {
           setInterval(updateStatus, 5000);
           updateStatus();
           
-          // Selecionar phishing por padrão
+          // Selecionar Phishing por padrão
           document.addEventListener('DOMContentLoaded', function() {
-            selectIncident('phishing', 'Ataque de Phishing');
+            selectIncident('Phishing', 'Ataque de Phishing');
           });
         </script>
       </head>
@@ -1679,7 +1679,7 @@ app.get("/", (req, res) => {
           <div class="card">
             <h3>🔍 Selecionar Tipo de Incidente</h3>
             <div class="incidents-grid">
-              <div class="incident-card phishing" onclick="selectIncident('phishing', 'Ataque de Phishing')">
+              <div class="incident-card Phishing" onclick="selectIncident('Phishing', 'Ataque de Phishing')">
                 <div class="incident-icon">📧</div>
                 <h4>Phishing Detectado</h4>
                 <div class="severity severity-high">ALTA SEVERIDADE</div>
@@ -1786,7 +1786,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`📁 Áudios servidos em: ${baseUrl}/audio/`);
   console.log(`🔗 Health: http://localhost:${PORT}/health`);
   console.log(`🎯 Sistema: Resposta a incidentes ATIVADA`);
-  console.log(`🚨 Tipos de incidentes: phishing, ransomware, exfiltration`);
+  console.log(`🚨 Tipos de incidentes: Phishing, ransomware, exfiltration`);
 });
 
 server.on("upgrade", (req, socket, head) => {
