@@ -693,66 +693,143 @@ Baseie-se na severidade {severity} e dados fornecidos.`
   }
 
   // 🔥 MÉTODO SIMPLIFICADO COM FUNCTION CALLING
-  async generateResponse(callSid, userMessage) {
-    try {
-      const history = this.getConversationHistory(callSid);
-      const securityData = this.userData.get(callSid);
-      
-      if (!securityData) {
-        throw new Error('Dados de segurança não encontrados');
-      }
-
-      const recentHistory = history.slice(-2); // Apenas histórico recente
-      const prompt = this.buildSimplePrompt(userMessage, recentHistory, securityData);
-
-      console.log(`🧠 Gerando resposta [${callSid}]: "${userMessage.substring(0, 50)}..."`);
-
-      // 🎯 CHAMADA COM FUNCTION CALLING
-      const response = await ai.models.generateContent({
-        model: model,
-        contents: prompt,
-        config: {
-          tools: [{
-            functionDeclarations: this.functionCalling.functionDeclarations
-          }],
-          temperature: 0.2,
-          maxOutputTokens: 200, // Mais curto para respostas rápidas
-        },
-      });
-
-      let finalResponse = '';
-
-      // 🔄 PROCESSAR FUNCTION CALL SE EXISTIR
-      if (response.functionCalls && response.functionCalls.length > 0) {
-        const functionCall = response.functionCalls[0];
-        
-        console.log(`💾 Function call detectado: ${functionCall.name}`);
-        
-        // Executar função para salvar Q&A
-        await this.functionCalling.executeFunction(callSid, functionCall);
-        
-        // Usar a resposta normal do Gemini (se houver)
-        finalResponse = response.text || 'Obrigado pela informação. Por favor, continue.';
-      } else {
-        // 📝 RESPOSTA NORMAL SEM FUNCTION CALL
-        finalResponse = response.text || 'Não entendi. Pode repetir?';
-      }
-
-      if (!finalResponse || finalResponse.length < 2) {
-        throw new Error('Resposta muito curta do Gemini');
-      }
-
-      this.updateConversationHistory(callSid, userMessage, finalResponse);
-      
-      console.log(`🤖 Resposta [${callSid}]: "${finalResponse.substring(0, 50)}..."`);
-
-      return finalResponse;
-
-    } catch (error) {
-      console.error(`❌ Erro Gemini [${callSid}]:`, error);
-      return "Não entendi. Pode repetir por favor?";
+// =============================
+// 🧠 Gemini Service - Método generateResponse ATUALIZADO
+// =============================
+async generateResponse(callSid, userMessage) {
+  try {
+    const history = this.getConversationHistory(callSid);
+    const securityData = this.userData.get(callSid);
+    
+    if (!securityData) {
+      console.error(`❌ Dados de segurança não encontrados para [${callSid}]`);
+      return "Estou com problemas técnicos. Por favor, tente novamente.";
     }
+
+    // 🔥 FILTRAR MENSAGENS VAZIAS OU MUITO CURTAS
+    const cleanMessage = userMessage.trim();
+    if (cleanMessage.length < 2) {
+      console.log(`⚠️ Mensagem muito curta ignorada: "${cleanMessage}"`);
+      return "Não consegui ouvir. Pode repetir?";
+    }
+
+    console.log(`🧠 Processando [${callSid}]: "${cleanMessage.substring(0, 100)}"`);
+
+    const recentHistory = history.slice(-3);
+    const prompt = this.buildEnhancedPrompt(cleanMessage, recentHistory, securityData);
+
+    // 🎯 CONFIGURAÇÃO MELHORADA
+    const response = await ai.models.generateContent({
+      model: model,
+      contents: prompt,
+      config: {
+        tools: [{
+          functionDeclarations: this.functionCalling.functionDeclarations
+        }],
+        temperature: 0.3, // Aumentado para mais flexibilidade
+        maxOutputTokens: 150, // Respostas mais curtas
+        topP: 0.8,
+      },
+    });
+
+    let finalResponse = '';
+
+    // 🔄 PROCESSAR FUNCTION CALL SE EXISTIR
+    if (response.functionCalls && response.functionCalls.length > 0) {
+      const functionCall = response.functionCalls[0];
+      
+      console.log(`💾 Function call detectado: ${functionCall.name}`, {
+        question: functionCall.args.question?.substring(0, 50),
+        answer: functionCall.args.answer?.substring(0, 50)
+      });
+      
+      // Executar função para salvar Q&A
+      const functionResult = await this.functionCalling.executeFunction(callSid, functionCall);
+      console.log(`✅ Função executada:`, functionResult);
+      
+      // Usar a resposta normal do Gemini
+      finalResponse = response.text || 'Obrigado pela informação. Vamos continuar.';
+    } else {
+      // 📝 RESPOSTA NORMAL SEM FUNCTION CALL
+      finalResponse = response.text || 'Pode continuar, estou acompanhando.';
+    }
+
+    // 🛡️ VALIDAÇÃO DA RESPOSTA
+    if (!finalResponse || finalResponse.length < 2) {
+      console.warn(`⚠️ Resposta muito curta do Gemini: "${finalResponse}"`);
+      finalResponse = "Pode reformular sua resposta? Não entendi completamente.";
+    }
+
+    // 📝 ATUALIZAR HISTÓRICO
+    this.updateConversationHistory(callSid, cleanMessage, finalResponse);
+    
+    console.log(`🤖 Resposta [${callSid}]: "${finalResponse.substring(0, 80)}"`);
+
+    return finalResponse;
+
+  } catch (error) {
+    console.error(`❌ Erro Gemini [${callSid}]:`, error);
+    
+    // 🔄 FALLBACKS MAIS INTELIGENTES
+    const fallbacks = [
+      "Não consegui processar. Pode repetir mais devagar?",
+      "O áudio pode ter cortado. Pode refazer a pergunta?",
+      "Estou com dificuldade técnica. Pode tentar novamente?",
+      "Não capturei completamente. Pode reformular?"
+    ];
+    
+    return fallbacks[Math.floor(Math.random() * fallbacks.length)];
   }
+}
+
+// 🎯 PROMPT MELHORADO
+buildEnhancedPrompt(userMessage, history, securityData) {
+  const { nome, attack_type, severity } = securityData;
+  
+  const promptConfig = this.securityPrompts[attack_type] || this.securityPrompts.default;
+  
+  let prompt = promptConfig.system
+    .replace(/{nome}/g, nome)
+    .replace(/{attack_type}/g, attack_type)
+    .replace(/{severity}/g, severity)
+    .replace(/{user_service}/g, securityData.user_service || '')
+    .replace(/{host_origin}/g, securityData.host_origin || '')
+    .replace(/{remote_ip}/g, securityData.remote_ip || '')
+    .replace(/{data}/g, securityData.data || '')
+    .replace(/{hora_utc3}/g, securityData.hora_utc3 || '')
+    .replace(/{ip_origem_cliente}/g, securityData.ip_origem_cliente || '')
+    .replace(/{ip_origem_remoto}/g, securityData.ip_origem_remoto || '')
+    .replace(/{ip_destino}/g, securityData.ip_destino || '')
+    .replace(/{port_protocol}/g, securityData.port_protocol || '')
+    .replace(/{urls}/g, securityData.urls || '')
+    .replace(/{signatures_iocs}/g, securityData.signatures_iocs || '')
+    .replace(/{hashes_anexos}/g, securityData.hashes_anexos || '')
+    .replace(/{evidence}/g, securityData.evidence || '')
+    .replace(/{critical_note}/g, securityData.critical_note || '')
+    .replace(/{host_afetado}/g, securityData.host_afetado || '')
+    .replace(/{ip_origem_host_interno}/g, securityData.ip_origem_host_interno || '')
+    .replace(/{ips_remotos}/g, securityData.ips_remotos || '')
+    .replace(/{processos}/g, securityData.processos || '')
+    .replace(/{hash_binario}/g, securityData.hash_binario || '')
+    .replace(/{volumes}/g, securityData.volumes || '');
+
+  // 🔥 ADICIONAR CONTEXTO DE CONVERSA
+  prompt += `\n\nCONTEXTO ATUAL DA CONVERSA:`;
+  
+  if (history.length > 0) {
+    history.forEach(([user, assistant], index) => {
+      prompt += `\n[${index + 1}] Analista: ${user}`;
+      prompt += `\n[${index + 1}] Você: ${assistant}`;
+    });
+  } else {
+    prompt += `\n[Início da conversa]`;
+  }
+
+  prompt += `\n\nRESPOSTA MAIS RECENTE DO ANALISTA: "${userMessage}"`;
+  prompt += `\n\nSUA PRÓXIMA RESPOSTA (seja natural, direto, 1-2 frases, use função quando relevante):`;
+
+  return prompt;
+}
 
   // 🎯 PROMPT SIMPLIFICADO PARA Q&A
   buildSimplePrompt(userMessage, history, securityData) {
