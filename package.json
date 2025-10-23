@@ -7,15 +7,14 @@
     "start": "node index.js"
   },
   "dependencies": {
-    "express": "^4.19.2",
-    "twilio": "^4.22.0",
-    "ws": "^8.17.0",
     "@google-cloud/speech": "^5.5.0",
     "@google-cloud/text-to-speech": "^5.0.0",
     "@google-cloud/vertexai": "^1.10.0",
-    "@google/generative-ai": "^0.24.1",
     "@google/genai": "latest",
-    "nodemailer": "^6.9.7"
-    
+    "@google/generative-ai": "^0.24.1",
+    "express": "^4.19.2",
+    "nodemailer": "^6.10.1",
+    "twilio": "^4.22.0",
+    "ws": "^8.17.0"
   }
 }
