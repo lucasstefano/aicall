@@ -754,6 +754,9 @@ const geminiService = new GeminiService();
 // =============================
 // 🎯 Configuração STT OTIMIZADA
 // =============================
+// =============================
+// 🎯 Configuração STT OTIMIZADA - CORREÇÃO IMEDIATA
+// =============================
 const sttConfig = {
   config: {
     encoding: "MULAW",
@@ -762,23 +765,52 @@ const sttConfig = {
     enableAutomaticPunctuation: true,
     model: "phone_call",
     useEnhanced: true,
+    enableSpokenPunctuation: true,
+    enableWordConfidence: true,
+    enableWordTimeOffsets: true,
+    // 🔥 CRÍTICO: Configurações para frases longas e pausas
     speechContexts: [{
       phrases: [
         "sim", "não", "phishing", "ransomware", "exfiltration", "ataque", "segurança", "incidente",
         "firewall", "antivírus", "quarentena", "isolamento", "mitigação", "acesso", "credenciais",
         "senha", "vazamento", "dados", "criptografia", "backup", "exfiltração", "credenciais",
         "macros", "malicioso", "cliquei", "link", "anexo", "computador", "dispositivo", "rede",
-        "suspeito", "estranho", "lentidão", "pop-up", "programa", "executar", "habilitei", "macro"
+        "suspeito", "estranho", "lentidão", "pop-up", "programa", "executar", "habilitei", "macro",
+        "ontem", "hoje", "manhã", "tarde", "noite", "cliquei no link", "inseri senha", "abri anexo",
+        "não percebi", "comportamento estranho", "pop ups", "lentidão", "programas desconhecidos",
+        "habilitei macros", "executei algo", "outro dispositivo", "computador pessoal", "celular"
       ],
-      boost: 15.0
-    }]
+      boost: 20.0
+    }],
+    // 🔥 NOVO: Adaptador para conversação natural
+    adaptation: {
+      phraseSets: [{
+        phrases: [
+          {value: "sim eu cliquei no link", boost: 15},
+          {value: "não cliquei em nada", boost: 15},
+          {value: "inseri usuário e senha", boost: 15},
+          {value: "abri o anexo sim", boost: 15},
+          {value: "habilitei as macros", boost: 15},
+          {value: "percebi comportamento estranho", boost: 15},
+          {value: "está mais lento sim", boost: 15},
+          {value: "apareceram pop ups", boost: 15},
+          {value: "usei outro dispositivo", boost: 15}
+        ]
+      }]
+    }
   },
+  // 🔥 CRÍTICO: Configurações de tempo otimizadas
   interimResults: true,
-  interimResultsThreshold: 0.5,
-  single_utterance: false,
-  noSpeechTimeout: 30,
+  interimResultsThreshold: 0.3, // Mais sensível a detecções iniciais
+  single_utterance: false, // Permite múltiplas falas
+  noSpeechTimeout: 3000, // Reduzido para detectar pausas curtas
   enableVoiceActivityEvents: true,
-  speechEventTimeout: 5000
+  speechEventTimeout: 10000, // Aumentado para frases longas
+  // 🔥 NOVO: Configurações específicas para conversação
+  voiceActivityTimeout: 2000, // Tempo para considerar fim de frase
+  maxAlternatives: 3, // Mais alternativas de transcrição
+  profanityFilter: false,
+  enableSeparateRecognitionPerChannel: false
 };
 
 // =============================
@@ -803,10 +835,41 @@ class AudioStreamSession {
     this.mediaPacketsReceived = 0;
     this.lastMediaPacketTime = Date.now();
     
+    // 🔥 NOVAS PROPRIEDADES PARA CONTROLE DE FRASES
+    this.pendingTranscript = "";
+    this.lastStableTranscript = "";
+    this.transcriptBuffer = [];
+    this.bufferSize = 3;
+    this.speechEndTimeout = null;
+    this.lastProcessedKey = "";
+    this.lastProcessedTime = 0;
+    this.pendingTranscript = "";
+    this.lastStableTranscript = "";
+    this.transcriptBuffer = [];
+    this.bufferSize = 3;
+    this.speechEndTimeout = null;
+    
     console.log(`🎧 Nova sessão de segurança: ${callSid}, Nome: ${securityData?.nome}, Tipo: ${securityData?.attack_type}`);
     this.setupSTT();
     this.startHealthCheck();
     this.resetInactivityTimer();
+  }
+
+  // 🔥 NOVO MÉTODO: Detecta quando o usuário para de falar
+  handleSpeechEnd(transcript) {
+    if (this.speechEndTimeout) {
+      clearTimeout(this.speechEndTimeout);
+    }
+    
+    this.speechEndTimeout = setTimeout(() => {
+      if (transcript && transcript.length > 3 && !this.geminiProcessing) {
+        console.log(`🎯 Detectado fim de fala - Processando: "${transcript}"`);
+        this.lastFinalTranscript = transcript;
+        this.processWithGemini(transcript);
+        this.pendingTranscript = "";
+        this.transcriptBuffer = [];
+      }
+    }, 1500); // 🔥 1.5 segundos de silence para considerar fim de frase
   }
 
   setupSTT() {
@@ -942,45 +1005,86 @@ class AudioStreamSession {
     }
   }
 
-  async handleSTTData(data) {
-    try {
-      if (data.results && data.results[0]) {
-        const result = data.results[0];
-        const transcript = result.alternatives[0]?.transcript?.trim();
-        const isFinal = result.isFinal;
-        const stability = result.stability;
+// 🔥 MÉTODO CORRIGIDO - Melhor detecção de frases completas
+async handleSTTData(data) {
+  try {
+    if (data.results && data.results[0]) {
+      const result = data.results[0];
+      const transcript = result.alternatives[0]?.transcript?.trim();
+      const isFinal = result.isFinal;
+      const stability = result.stability;
+      const confidence = result.alternatives[0]?.confidence || 0;
 
-        if (!transcript) {
-          // Log de resultados vazios para debug
-          if (data.results[0]?.alternatives?.length > 0) {
-            console.log(`🔇 STT retornou transcript vazio [${this.callSid}], stability: ${stability}`);
-          }
-          return;
-        }
+      if (!transcript) {
+        return;
+      }
 
-        this.consecutiveErrors = 0;
-        this.lastActivityTime = Date.now();
-        this.resetInactivityTimer();
+      this.consecutiveErrors = 0;
+      this.lastActivityTime = Date.now();
+      this.resetInactivityTimer();
 
-        // 🔥 MELHORIA: Log mais informativo
-        const logType = isFinal ? 'FINAL' : (stability > 0.7 ? 'STABLE' : 'INTERIM');
-        console.log(`📝 [${logType}] ${this.callSid}: "${transcript}" (stability: ${stability})`);
+      // 🔥 MELHORIA: Log detalhado para debug
+      const logType = isFinal ? 'FINAL' : (stability > 0.7 ? 'STABLE' : 'INTERIM');
+      console.log(`📝 [${logType}] ${this.callSid}: "${transcript}" (stability: ${stability}, confidence: ${confidence})`);
+      
+      // 🔥 CRÍTICO: Lógica otimizada para capturar frases completas
+      if (isFinal) {
+        // Para resultados FINAIS - sempre processa
+        this.lastFinalTranscript = transcript;
+        await this.processWithGemini(transcript);
         
-        if (isFinal || (stability > 0.8 && transcript.length > 2)) {
-          const isSignificantChange = this.isSignificantTranscriptChange(transcript);
-          
-          if (isSignificantChange) {
-            this.lastFinalTranscript = transcript;
-            await this.processWithGemini(transcript);
-          }
+      } else if (stability > 0.85 && transcript.length > 5) {
+        // Para resultados ESTÁVEIS - processa se for significativamente diferente
+        const isSignificantChange = this.isSignificantTranscriptChange(transcript);
+        
+        if (isSignificantChange) {
+          console.log(`🎯 Processando transcrição estável: "${transcript}"`);
+          this.lastFinalTranscript = transcript;
+          await this.processWithGemini(transcript);
         }
       }
-    } catch (error) {
-      console.error(`❌ Erro processando STT [${this.callSid}]:`, error);
-      this.consecutiveErrors++;
-      this.performHealthCheck();
+      
+      // 🔥 NOVO: Detecta se o usuário parou de falar (baseado em stability alta)
+      if (stability > 0.9 && !isFinal && transcript.length > 10) {
+        console.log(`⏰ Stability alta detectada - possível fim de frase: "${transcript}"`);
+        setTimeout(() => {
+          // Força processamento se não houve nova atividade
+          if (Date.now() - this.lastActivityTime > 1000) {
+            console.log(`🚀 Forçando processamento de frase completa: "${transcript}"`);
+            this.lastFinalTranscript = transcript;
+            this.processWithGemini(transcript);
+          }
+        }, 800); // Pequeno delay para capturar frase completa
+      }
     }
+  } catch (error) {
+    console.error(`❌ Erro processando STT [${this.callSid}]:`, error);
+    this.consecutiveErrors++;
+    this.performHealthCheck();
   }
+}
+
+// 🔥 MELHORIA: Algoritmo melhorado para detectar mudanças significativas
+isSignificantTranscriptChange(newTranscript) {
+  if (!this.lastFinalTranscript) return true;
+  
+  const oldWords = this.lastFinalTranscript.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+  const newWords = newTranscript.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+  
+  if (newWords.length === 0) return false;
+  
+  // Calcula similaridade baseada em palavras-chave
+  const commonWords = oldWords.filter(word => 
+    newWords.some(newWord => newWord.includes(word) || word.includes(newWord))
+  );
+  
+  const similarity = commonWords.length / Math.max(oldWords.length, newWords.length);
+  const isSignificant = similarity < 0.4; // 🔥 Aumentada sensibilidade
+  
+  console.log(`🔍 Similaridade: ${similarity.toFixed(2)} - Significativo: ${isSignificant}`);
+  
+  return isSignificant;
+}
 
   // 🔥 NOVO: Verifica se a transcrição é significativamente diferente da anterior
   isSignificantTranscriptChange(newTranscript) {
@@ -997,46 +1101,68 @@ class AudioStreamSession {
     return similarity < 0.6;
   }
 
-  async processWithGemini(transcript) {
-    if (this.geminiProcessing) {
-      console.log(`⏳ Gemini ocupado [${this.callSid}], ignorando: "${transcript}"`);
-      return;
-    }
-
-    this.geminiProcessing = true;
-
-    try {
-      console.log(`🧠 Processando com Gemini: "${transcript}"`);
-      const geminiResponse = await geminiService.generateResponse(this.callSid, transcript);
-      
-      if (geminiResponse && geminiResponse.length > 2) {
-        console.log(`✅ Resposta Gemini recebida: "${geminiResponse.substring(0, 50)}..."`);
-        responseQueue.addResponse(this.callSid, geminiResponse);
-      } else {
-        console.log(`⚠️ Resposta Gemini vazia ou muito curta para [${this.callSid}]`);
-        
-        // 🔥 MELHORIA: Fallback para resposta padrão
-        const fallbackResponse = "Não entendi completamente. Pode repetir por favor?";
-        responseQueue.addResponse(this.callSid, fallbackResponse);
-      }
-      
-    } catch (error) {
-      console.error(`❌ Erro processamento Gemini [${this.callSid}]:`, error);
-      this.consecutiveErrors++;
-      
-      // 🔥 MELHORIA: Fallback em caso de erro
-      const fallbackResponses = [
-        "Houve um problema técnico. Pode repetir sua resposta?",
-        "Não consegui processar sua resposta. Pode falar novamente?",
-        "Estou com dificuldades técnicas. Pode reformular sua resposta?"
-      ];
-      const fallback = fallbackResponses[Math.floor(Math.random() * fallbackResponses.length)];
-      responseQueue.addResponse(this.callSid, fallback);
-      
-    } finally {
-      this.geminiProcessing = false;
-    }
+ async processWithGemini(transcript) {
+  // 🔥 PROTEÇÃO: Evita processar a mesma frase múltiplas vezes
+  const processedKey = transcript.toLowerCase().trim().substring(0, 50);
+  if (this.lastProcessedKey === processedKey && Date.now() - this.lastProcessedTime < 3000) {
+    console.log(`⏭️ Ignorando duplicata recente: "${transcript}"`);
+    return;
   }
+  
+  this.lastProcessedKey = processedKey;
+  this.lastProcessedTime = Date.now();
+
+  if (this.geminiProcessing) {
+    console.log(`⏳ Gemini ocupado [${this.callSid}], aguardando: "${transcript}"`);
+    
+    // 🔥 MELHORIA: Buffer para frases enquanto processa
+    if (this.transcriptBuffer.length < this.bufferSize) {
+      this.transcriptBuffer.push(transcript);
+    }
+    return;
+  }
+
+  this.geminiProcessing = true;
+
+  try {
+    console.log(`🧠 Processando com Gemini: "${transcript}"`);
+    const geminiResponse = await geminiService.generateResponse(this.callSid, transcript);
+    
+    if (geminiResponse && geminiResponse.length > 2) {
+      console.log(`✅ Resposta Gemini recebida: "${geminiResponse.substring(0, 50)}..."`);
+      responseQueue.addResponse(this.callSid, geminiResponse);
+      
+      // 🔥 PROCESSAR BUFFER APÓS CONCLUSÃO
+      if (this.transcriptBuffer.length > 0) {
+        setTimeout(() => {
+          const bufferedTranscript = this.transcriptBuffer.join(" ");
+          console.log(`📚 Processando buffer: "${bufferedTranscript}"`);
+          this.transcriptBuffer = [];
+          this.processWithGemini(bufferedTranscript);
+        }, 500);
+      }
+    } else {
+      console.log(`⚠️ Resposta Gemini vazia ou muito curta para [${this.callSid}]`);
+      const fallbackResponse = "Não entendi completamente. Pode repetir por favor?";
+      responseQueue.addResponse(this.callSid, fallbackResponse);
+    }
+    
+  } catch (error) {
+    console.error(`❌ Erro processamento Gemini [${this.callSid}]:`, error);
+    this.consecutiveErrors++;
+    
+    const fallbackResponses = [
+      "Houve um problema técnico. Pode repetir sua resposta?",
+      "Não consegui processar sua resposta. Pode falar novamente?",
+      "Estou com dificuldades técnicas. Pode reformular sua resposta?"
+    ];
+    const fallback = fallbackResponses[Math.floor(Math.random() * fallbackResponses.length)];
+    responseQueue.addResponse(this.callSid, fallback);
+    
+  } finally {
+    this.geminiProcessing = false;
+  }
+}
 
   handleMedia(payload) {
     this.mediaPacketsReceived++;
