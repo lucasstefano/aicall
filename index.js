@@ -317,7 +317,7 @@ class GeminiService {
         Faça uma pergunta por vez e aguarde a resposta do usuário.
         Use linguagem urgente, clara e concisa.
         Responda com uma frase curta por vez (máximo 2 frases).
-        Se o usuário fizer perguntas fora do roteiro, responda apenas com base no contexto existente, mas retorne à próxima etapa do roteiro.
+        Se o usuário fizer perguntas fora do roteiro, responda apenas com base no contexto existente.
         Se o usuário pedir para repetir ou disser que não entendeu, repita a pergunta.
         Atenção TTS:
           - Nunca use emojis, símbolos especiais ou caracteres como #, ##, *, **, [], {}, <>, /**.
@@ -376,7 +376,7 @@ class GeminiService {
         Faça uma pergunta por vez e aguarde a resposta do usuário.
         Use linguagem urgente, clara e concisa.
         Responda com uma frase curta por vez (máximo 2 frases).
-        Se o usuário fizer perguntas fora do roteiro, responda apenas com base no contexto existente, mas retorne à próxima etapa do roteiro.
+        Se o usuário fizer perguntas fora do roteiro, responda apenas com base no contexto existente.
         Se o usuário pedir para repetir ou disser que não entendeu, repita a pergunta.
         Atenção TTS:
           - Nunca use emojis, símbolos especiais ou caracteres como #, ##, *, **, [], {}, <>, /**.
@@ -428,7 +428,7 @@ class GeminiService {
         Faça uma pergunta por vez e aguarde a resposta do usuário.
         Use linguagem urgente, clara e concisa.
         Responda com uma frase curta por vez (máximo 2 frases).
-        Se o usuário fizer perguntas fora do roteiro, responda apenas com base no contexto existente, mas retorne à próxima etapa do roteiro.
+        Se o usuário fizer perguntas fora do roteiro, responda apenas com base no contexto existente.
         Se o usuário pedir para repetir ou disser que não entendeu, repita a pergunta.
         Atenção TTS:
           - Nunca use emojis, símbolos especiais ou caracteres como #, ##, *, **, [], {}, <>, /**.
@@ -769,9 +769,6 @@ const sttConfig = {
 // =============================
 // 🎙️ Audio Stream Session CORRIGIDA
 // =============================
-// =============================
-// 🎙️ Audio Stream Session - VERSÃO TWILIO OTIMIZADA
-// =============================
 class AudioStreamSession {
   constructor(ws, callSid, securityData = null) {
     this.ws = ws;
@@ -782,17 +779,16 @@ class AudioStreamSession {
     this.lastFinalTranscript = "";
     this.geminiProcessing = false;
     this.consecutiveErrors = 0;
-    this.maxConsecutiveErrors = 5;
+    this.maxConsecutiveErrors = 3;
     this.healthCheckInterval = null;
     this.inactivityTimeout = null;
     this.lastActivityTime = Date.now();
     this.reconnectAttempts = 0;
-    this.maxReconnectAttempts = 2; // Reduzido - Twilio é confiável
+    this.maxReconnectAttempts = 3;
     this.mediaPacketsReceived = 0;
     this.lastMediaPacketTime = Date.now();
-    this.streamStartTime = Date.now();
     
-    console.log(`🎧 Nova sessão Twilio: ${callSid}, Nome: ${securityData?.nome}, Tipo: ${securityData?.attack_type}`);
+    console.log(`🎧 Nova sessão de segurança: ${callSid}, Nome: ${securityData?.nome}, Tipo: ${securityData?.attack_type}`);
     this.setupSTT();
     this.startHealthCheck();
     this.resetInactivityTimer();
@@ -800,7 +796,7 @@ class AudioStreamSession {
 
   setupSTT() {
     try {
-      console.log(`🔧 Configurando STT para chamada Twilio [${this.callSid}]`);
+      console.log(`🔧 Configurando STT para [${this.callSid}]`);
       
       // Fecha stream anterior se existir
       if (this.sttStream) {
@@ -813,44 +809,18 @@ class AudioStreamSession {
       }
       
       this.sttStream = clientSTT
-        .streamingRecognize({
-          config: {
-            encoding: "MULAW",
-            sampleRateHertz: 8000,
-            languageCode: "pt-BR",
-            enableAutomaticPunctuation: true,
-            model: "phone_call",
-            useEnhanced: true,
-            speechContexts: [{
-              phrases: [
-                "sim", "não", "phishing", "ransomware", "exfiltration", "ataque", "segurança", 
-                "incidente", "firewall", "antivírus", "quarentena", "isolamento", "mitigação",
-                "acesso", "credenciais", "senha", "vazamento", "dados", "criptografia", "backup",
-                "exfiltração", "macros", "malicioso", "cliquei", "link", "anexo", "computador",
-                "dispositivo", "rede", "suspeito", "estranho", "lentidão", "pop-up", "programa",
-                "executar", "habilitei", "macro", "ok", "entendi", "repita", "como", "quando",
-                "onde", "porque", "qual", "quem", "verdade", "mentira", "talvez", "possivelmente"
-              ],
-              boost: 20.0
-            }]
-          },
-          interimResults: true,
-          interimResultsThreshold: 0.4, // Mais sensível
-          single_utterance: false,
-          noSpeechTimeout: 60, // Aumentado para chamadas
-          enableVoiceActivityEvents: true
-        })
+        .streamingRecognize(sttConfig)
         .on("data", (data) => {
           this.handleSTTData(data);
         })
         .on("error", (error) => {
-          console.error(`❌ Erro STT Twilio [${this.callSid}]:`, error);
+          console.error(`❌ Erro STT [${this.callSid}]:`, error);
           this.consecutiveErrors++;
-          // Não reinicia imediatamente - Twilio pode ter pausas naturais
+          this.checkHealth();
         })
         .on("end", () => {
-          console.log(`🔚 Stream STT finalizado [${this.callSid}] - Provavelmente fim da chamada`);
-          this.isActive = false;
+          console.log(`🔚 Stream STT finalizado normalmente [${this.callSid}]`);
+          // Não recria automaticamente - aguarda health check
         })
         .on("close", () => {
           console.log(`🔒 Stream STT fechado [${this.callSid}]`);
@@ -858,11 +828,12 @@ class AudioStreamSession {
 
       this.isActive = true;
       this.consecutiveErrors = 0;
-      console.log(`✅ STT Twilio configurado com sucesso [${this.callSid}]`);
+      console.log(`✅ STT configurado com sucesso [${this.callSid}]`);
       
     } catch (error) {
-      console.error(`❌ Erro criando stream STT Twilio [${this.callSid}]:`, error);
+      console.error(`❌ Erro criando stream STT [${this.callSid}]:`, error);
       this.consecutiveErrors++;
+      this.attemptReconnect();
     }
   }
 
@@ -871,77 +842,89 @@ class AudioStreamSession {
       clearTimeout(this.inactivityTimeout);
     }
     
-    // 🔥 CRÍTICO: Timeout MUITO maior para Twilio - chamadas telefônicas têm pausas naturais
+    // 🔥 CRÍTICO: Aumentado significativamente para chamadas telefônicas
     this.inactivityTimeout = setTimeout(() => {
-      const sessionDuration = Date.now() - this.streamStartTime;
       const timeSinceLastMedia = Date.now() - this.lastMediaPacketTime;
+      console.log(`⏰ Verificando inatividade [${this.callSid}]: ${timeSinceLastMedia}ms desde último pacote, ${this.mediaPacketsReceived} pacotes recebidos`);
       
-      console.log(`⏰ Verificando Twilio [${this.callSid}]: ${sessionDuration}ms de sessão, ${timeSinceLastMedia}ms desde última mídia`);
-      
-      // Lógica específica para Twilio:
-      if (this.mediaPacketsReceived === 0 && sessionDuration > 30000) {
-        // Se não recebeu NENHUM pacote em 30s, provavelmente há problema
-        console.log(`🚨 Twilio [${this.callSid}]: Nenhum pacote recebido em 30s - verificando conexão`);
-        this.checkTwilioConnection();
-      } else if (timeSinceLastMedia > 120000 && this.mediaPacketsReceived > 0) {
-        // Se já recebeu pacotes mas está silencioso há 2 minutos
-        console.log(`🔇 Twilio [${this.callSid}]: Silêncio prolongado (${timeSinceLastMedia}ms) - mantendo sessão`);
-        this.resetInactivityTimer(); // Continua esperando
+      // Só reinicia se realmente não recebeu nenhum pacote de mídia
+      if (this.mediaPacketsReceived === 0) {
+        console.log(`🔄 Nenhum pacote de mídia recebido, verificando conexão... [${this.callSid}]`);
+        this.checkMediaConnection();
       } else {
-        // Caso normal - continua monitorando
-        this.resetInactivityTimer();
+        console.log(`📞 Pacotes de mídia recebidos: ${this.mediaPacketsReceived}, mantendo sessão ativa [${this.callSid}]`);
+        this.resetInactivityTimer(); // Continua monitorando
       }
-    }, 60000); // 🔥 1 MINUTO entre verificações (era 30s)
+    }, 120000); // 🔥 2 MINUTOS - tempo suficiente para respostas humanas
   }
 
-  checkTwilioConnection() {
-    const sessionDuration = Date.now() - this.streamStartTime;
+  // 🔥 NOVO: Verifica especificamente a conexão de mídia
+  checkMediaConnection() {
+    const timeSinceLastMedia = Date.now() - this.lastMediaPacketTime;
     
-    if (sessionDuration > 180000 && this.mediaPacketsReceived === 0) {
-      // 3 minutos sem nenhum pacote - provavelmente a chamada não conectou
-      console.log(`🚫 Twilio [${this.callSid}]: 3 minutos sem pacotes - finalizando sessão`);
+    if (timeSinceLastMedia > 180000) { // 3 minutos sem mídia
+      console.log(`🚫 Sem pacotes de mídia há 3 minutos, limpando sessão [${this.callSid}]`);
       this.cleanup();
-    } else if (this.consecutiveErrors >= this.maxConsecutiveErrors) {
-      console.log(`🔄 Twilio [${this.callSid}]: Muitos erros - tentando recuperar`);
+    } else if (timeSinceLastMedia > 120000 && this.mediaPacketsReceived === 0) {
+      console.log(`🔄 Tentando reinicialização completa do STT [${this.callSid}]`);
       this.restartSTT();
     }
-    // Se não, mantém a sessão - Twilio pode reconectar sozinho
+    // Caso contrário, mantém a sessão ativa
   }
 
   startHealthCheck() {
     this.healthCheckInterval = setInterval(() => {
       this.performHealthCheck();
-    }, 45000); // 🔥 Health check a cada 45s (era 30s)
+    }, 30000); // A cada 30 segundos
   }
 
   performHealthCheck() {
-    const sessionDuration = Date.now() - this.streamStartTime;
-    const timeSinceLastMedia = Date.now() - this.lastMediaPacketTime;
+    const now = Date.now();
+    const timeSinceLastActivity = now - this.lastActivityTime;
+    const timeSinceLastMedia = now - this.lastMediaPacketTime;
     
-    console.log(`❤️ Twilio Health [${this.callSid}]: ${sessionDuration}ms ativa, ${this.mediaPacketsReceived} pacotes, ${timeSinceLastMedia}ms silêncio`);
+    console.log(`❤️ Health Check [${this.callSid}]: ${this.mediaPacketsReceived} pacotes, ${timeSinceLastMedia}ms desde última mídia, ${this.consecutiveErrors} erros`);
     
-    // Só alerta se realmente parece haver problema
-    if (this.mediaPacketsReceived === 0 && sessionDuration > 120000) {
-      console.log(`⚠️ Twilio [${this.callSid}]: Chamada ativa há 2min sem áudio - possivelmente problema de conexão`);
+    // Só considera problema se não recebeu NENHUM pacote de mídia
+    if (this.mediaPacketsReceived === 0 && timeSinceLastMedia > 90000) {
+      console.log(`🚨 Health Check: Nenhum pacote de mídia recebido em 90s [${this.callSid}]`);
+      this.checkMediaConnection();
     }
     
-    // Reinicia STT apenas se completamente inoperante
-    if (this.consecutiveErrors >= 3 && sessionDuration > 60000) {
-      console.log(`🔄 Twilio [${this.callSid}]: STT com problemas - reiniciando`);
+    if (this.consecutiveErrors >= this.maxConsecutiveErrors) {
+      console.log(`🚑 Health Check: Muitos erros consecutivos [${this.callSid}], reiniciando...`);
       this.restartSTT();
     }
   }
 
+  checkHealth() {
+    this.performHealthCheck();
+  }
+
   restartSTT() {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.log(`🚫 Twilio [${this.callSid}]: Máximo de tentativas - mantendo sessão aberta`);
-      return; // Não limpa - deixa o Twilio tentar reconectar
+      console.log(`🚫 Máximo de tentativas de reconexão atingido [${this.callSid}]`);
+      this.cleanup();
+      return;
     }
     
     this.reconnectAttempts++;
-    console.log(`🔄 Twilio STT restart ${this.reconnectAttempts}/${this.maxReconnectAttempts} [${this.callSid}]`);
+    console.log(`🔄 Reiniciando STT (tentativa ${this.reconnectAttempts}/${this.maxReconnectAttempts}) para [${this.callSid}]...`);
     
     this.setupSTT();
+  }
+
+  attemptReconnect() {
+    if (this.reconnectAttempts < this.maxReconnectAttempts) {
+      const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 10000);
+      console.log(`🔄 Reconexão ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts} em ${delay}ms [${this.callSid}]`);
+      
+      setTimeout(() => {
+        if (this.isActive) {
+          this.restartSTT();
+        }
+      }, delay);
+    }
   }
 
   async handleSTTData(data) {
@@ -950,22 +933,25 @@ class AudioStreamSession {
         const result = data.results[0];
         const transcript = result.alternatives[0]?.transcript?.trim();
         const isFinal = result.isFinal;
-        const stability = result.stability || 0;
+        const stability = result.stability;
 
         if (!transcript) {
-          return; // Ignora resultados vazios
+          // Log de resultados vazios para debug
+          if (data.results[0]?.alternatives?.length > 0) {
+            console.log(`🔇 STT retornou transcript vazio [${this.callSid}], stability: ${stability}`);
+          }
+          return;
         }
 
         this.consecutiveErrors = 0;
         this.lastActivityTime = Date.now();
         this.resetInactivityTimer();
 
-        // Log mais detalhado para debug do Twilio
+        // 🔥 MELHORIA: Log mais informativo
         const logType = isFinal ? 'FINAL' : (stability > 0.7 ? 'STABLE' : 'INTERIM');
-        console.log(`🎯 Twilio STT [${logType}] ${this.callSid}: "${transcript}"`);
+        console.log(`📝 [${logType}] ${this.callSid}: "${transcript}" (stability: ${stability})`);
         
-        // 🔥 PROCESSAMENTO MAIS AGressIVO PARA TWILIO
-        if (isFinal || (stability > 0.6 && transcript.length > 1)) {
+        if (isFinal || (stability > 0.8 && transcript.length > 2)) {
           const isSignificantChange = this.isSignificantTranscriptChange(transcript);
           
           if (isSignificantChange) {
@@ -975,53 +961,59 @@ class AudioStreamSession {
         }
       }
     } catch (error) {
-      console.error(`❌ Erro processando STT Twilio [${this.callSid}]:`, error);
+      console.error(`❌ Erro processando STT [${this.callSid}]:`, error);
       this.consecutiveErrors++;
+      this.performHealthCheck();
     }
   }
 
+  // 🔥 NOVO: Verifica se a transcrição é significativamente diferente da anterior
   isSignificantTranscriptChange(newTranscript) {
     if (!this.lastFinalTranscript) return true;
     
-    // 🔥 Lógica mais permissiva para Twilio
     const oldWords = this.lastFinalTranscript.toLowerCase().split(/\s+/);
     const newWords = newTranscript.toLowerCase().split(/\s+/);
     
+    // Calcula similaridade simples
     const commonWords = oldWords.filter(word => newWords.includes(word));
     const similarity = commonWords.length / Math.max(oldWords.length, newWords.length);
     
-    // Considera significativo se similaridade < 70% (era 60%)
-    return similarity < 0.7 || newTranscript.length > this.lastFinalTranscript.length + 5;
+    // Considera significativo se similaridade < 60%
+    return similarity < 0.6;
   }
 
   async processWithGemini(transcript) {
     if (this.geminiProcessing) {
-      console.log(`⏳ Gemini ocupado [${this.callSid}], em fila: "${transcript}"`);
+      console.log(`⏳ Gemini ocupado [${this.callSid}], ignorando: "${transcript}"`);
       return;
     }
 
     this.geminiProcessing = true;
 
     try {
-      console.log(`🧠 Twilio -> Gemini: "${transcript}"`);
+      console.log(`🧠 Processando com Gemini: "${transcript}"`);
       const geminiResponse = await geminiService.generateResponse(this.callSid, transcript);
       
       if (geminiResponse && geminiResponse.length > 2) {
-        console.log(`✅ Gemini -> Twilio: "${geminiResponse.substring(0, 50)}..."`);
+        console.log(`✅ Resposta Gemini recebida: "${geminiResponse.substring(0, 50)}..."`);
         responseQueue.addResponse(this.callSid, geminiResponse);
       } else {
-        console.log(`⚠️ Resposta Gemini vazia para Twilio [${this.callSid}]`);
+        console.log(`⚠️ Resposta Gemini vazia ou muito curta para [${this.callSid}]`);
+        
+        // 🔥 MELHORIA: Fallback para resposta padrão
         const fallbackResponse = "Não entendi completamente. Pode repetir por favor?";
         responseQueue.addResponse(this.callSid, fallbackResponse);
       }
       
     } catch (error) {
-      console.error(`❌ Erro Gemini Twilio [${this.callSid}]:`, error);
+      console.error(`❌ Erro processamento Gemini [${this.callSid}]:`, error);
+      this.consecutiveErrors++;
       
+      // 🔥 MELHORIA: Fallback em caso de erro
       const fallbackResponses = [
         "Houve um problema técnico. Pode repetir sua resposta?",
-        "Não consegui processar. Pode falar novamente?",
-        "Estou com dificuldades. Pode reformular?"
+        "Não consegui processar sua resposta. Pode falar novamente?",
+        "Estou com dificuldades técnicas. Pode reformular sua resposta?"
       ];
       const fallback = fallbackResponses[Math.floor(Math.random() * fallbackResponses.length)];
       responseQueue.addResponse(this.callSid, fallback);
@@ -1036,10 +1028,9 @@ class AudioStreamSession {
     this.lastMediaPacketTime = Date.now();
     this.lastActivityTime = Date.now();
     
-    // Log a cada 50 pacotes para debug do Twilio
-    if (this.mediaPacketsReceived % 50 === 0) {
-      const sessionDuration = Date.now() - this.streamStartTime;
-      console.log(`📦 Twilio [${this.callSid}]: ${this.mediaPacketsReceived} pacotes em ${sessionDuration}ms`);
+    // Log a cada 100 pacotes para não poluir
+    if (this.mediaPacketsReceived % 100 === 0) {
+      console.log(`📦 [${this.callSid}] Pacotes de mídia recebidos: ${this.mediaPacketsReceived}`);
     }
     
     if (this.sttStream && this.isActive) {
@@ -1048,11 +1039,12 @@ class AudioStreamSession {
         this.sttStream.write(audioBuffer);
         this.resetInactivityTimer();
       } catch (error) {
-        console.error(`❌ Erro escrevendo no STT Twilio [${this.callSid}]:`, error);
+        console.error(`❌ Erro escrevendo no STT [${this.callSid}]:`, error);
         this.consecutiveErrors++;
+        this.performHealthCheck();
       }
     } else if (this.isActive) {
-      console.log(`🔄 STT Twilio não disponível, recriando... [${this.callSid}]`);
+      console.log(`🔄 STT não disponível para pacote #${this.mediaPacketsReceived}, recriando... [${this.callSid}]`);
       this.setupSTT();
       
       // Tenta processar o pacote após recriação
@@ -1062,168 +1054,54 @@ class AudioStreamSession {
             const audioBuffer = Buffer.from(payload, "base64");
             this.sttStream.write(audioBuffer);
           } catch (retryError) {
-            console.error(`❌ Erro retry STT Twilio [${this.callSid}]:`, retryError);
+            console.error(`❌ Erro no retry STT [${this.callSid}]:`, retryError);
           }
         }
-      }, 1000);
+      }, 500);
     }
   }
 
+  // 🔥 MELHORIA: Manter sessão viva com heartbeats
   sendHeartbeat() {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       try {
         this.ws.ping();
       } catch (error) {
-        console.error(`❌ Erro heartbeat Twilio [${this.callSid}]:`, error);
+        console.error(`❌ Erro enviando heartbeat [${this.callSid}]:`, error);
       }
     }
   }
 
   cleanup() {
-    console.log(`🧹 Cleanup Twilio [${this.callSid}] - ${this.mediaPacketsReceived} pacotes recebidos`);
+    console.log(`🧹 Iniciando cleanup completo [${this.callSid}]`);
     
     this.isActive = false;
     
+    // Limpa todos os intervalos e timeouts
     if (this.healthCheckInterval) {
       clearInterval(this.healthCheckInterval);
+      this.healthCheckInterval = null;
     }
     
     if (this.inactivityTimeout) {
       clearTimeout(this.inactivityTimeout);
+      this.inactivityTimeout = null;
     }
     
+    // Limpa STT stream
     if (this.sttStream) {
       try {
         this.sttStream.removeAllListeners();
         this.sttStream.destroy();
       } catch (error) {
-        // Ignora erros
+        // Ignora erros na destruição
       }
+      this.sttStream = null;
     }
     
-    console.log(`🔚 Sessão Twilio finalizada [${this.callSid}]`);
+    console.log(`🔚 Sessão finalizada [${this.callSid}] - ${this.mediaPacketsReceived} pacotes recebidos`);
   }
 }
-
-// =============================
-// 🔄 WebSocket Server - VERSÃO TWILIO
-// =============================
-wss.on("connection", (ws, req) => {
-  console.log("🎧 Nova conexão WebSocket Twilio");
-  let session = null;
-  let isAlive = true;
-  let callSid = null;
-
-  const heartbeatInterval = setInterval(() => {
-    if (ws.readyState === WebSocket.OPEN) {
-      if (!isAlive) {
-        console.log("💔 WebSocket Twilio inativo");
-        return;
-      }
-      isAlive = false;
-      ws.ping();
-      
-      if (session) {
-        session.sendHeartbeat();
-      }
-    }
-  }, 15000); // Heartbeat a cada 15s
-
-  ws.on("message", (msg) => {
-    try {
-      const data = JSON.parse(msg.toString());
-      
-      switch (data.event) {
-        case "start":
-          console.log("🚀 Twilio iniciando stream:", data.start.callSid);
-          
-          callSid = data.start.callSid;
-          const securityData = pendingSecurityData.get(callSid);
-          
-          if (activeSessions.has(callSid)) {
-            session = activeSessions.get(callSid);
-            session.ws = ws;
-            console.log(`🔗 WebSocket Twilio atualizado [${callSid}]`);
-          } else {
-            session = new AudioStreamSession(ws, callSid, securityData);
-            activeSessions.set(callSid, session);
-            
-            if (securityData) {
-              geminiService.generateWelcomeMessage(callSid, securityData)
-                .then(welcomeMessage => {
-                  responseQueue.addResponse(callSid, welcomeMessage);
-                })
-                .catch(error => {
-                  console.error(`❌ Erro welcome Twilio [${callSid}]:`, error);
-                  responseQueue.addResponse(callSid, `Alerta de segurança para ${securityData.nome}!`);
-                });
-            }
-          }
-          
-          pendingSecurityData.delete(callSid);
-          break;
-
-        case "media":
-          if (session && session.isActive) {
-            session.handleMedia(data.media.payload);
-          } else if (callSid && !session) {
-            // 🔥 CRÍTICO: Se recebe mídia mas não tem sessão, cria uma
-            console.log(`🔁 Twilio: Mídia recebida sem sessão, criando... [${callSid}]`);
-            const securityData = pendingSecurityData.get(callSid) || geminiService.userData.get(callSid);
-            session = new AudioStreamSession(ws, callSid, securityData);
-            activeSessions.set(callSid, session);
-          }
-          break;
-
-        case "stop":
-          console.log("🛑 Twilio parando stream:", data.stop.callSid);
-          if (session) {
-            session.isActive = false;
-            console.log(`⏳ Twilio stream parado [${data.stop.callSid}]`);
-            
-            // Cleanup mais lento para Twilio
-            setTimeout(() => {
-              if (session && activeSessions.has(data.stop.callSid)) {
-                console.log(`🧹 Cleanup final Twilio [${data.stop.callSid}]`);
-                session.cleanup();
-                activeSessions.delete(data.stop.callSid);
-              }
-            }, 60000); // 60 segundos
-          }
-          break;
-      }
-    } catch (error) {
-      console.error("❌ Erro WebSocket Twilio:", error);
-    }
-  });
-
-  ws.on("close", (code, reason) => {
-    console.log(`🔌 WebSocket Twilio fechado: ${code} - ${reason || 'Sem motivo'}`);
-    clearInterval(heartbeatInterval);
-    
-    // 🔥 Lógica específica para Twilio: mantém sessão por mais tempo
-    if (session && (code === 1001 || code === 1006)) {
-      console.log(`⏳ Twilio desconectado, aguardando reconexão [${session.callSid}]`);
-      
-      setTimeout(() => {
-        if (session && (!session.ws || session.ws.readyState !== WebSocket.OPEN)) {
-          console.log(`🚫 Timeout reconexão Twilio [${session.callSid}]`);
-          session.cleanup();
-          activeSessions.delete(session.callSid);
-        }
-      }, 90000); // 🔥 90 segundos para Twilio reconectar
-    }
-  });
-
-  ws.on("error", (error) => {
-    console.error("❌ Erro WebSocket Twilio:", error);
-    clearInterval(heartbeatInterval);
-  });
-
-  ws.on("pong", () => {
-    isAlive = true;
-  });
-});
 
 // =============================
 // 🔄 WebSocket Server CORRIGIDO
@@ -1239,6 +1117,139 @@ const pendingSecurityData = new Map();
 // Armazenar resumos para exibição na tela
 const callSummaries = new Map();
 
+wss.on("connection", (ws, req) => {
+  console.log("🎧 Nova conexão WebSocket de segurança");
+  let session = null;
+  let isAlive = true;
+  let callSid = null;
+
+  const heartbeatInterval = setInterval(() => {
+    if (ws.readyState === WebSocket.OPEN) {
+      if (!isAlive) {
+        console.log("💔 WebSocket inativo, terminando...");
+        ws.terminate();
+        return;
+      }
+      isAlive = false;
+      ws.ping();
+      
+      // 🔥 MELHORIA: Envia heartbeat para a sessão também
+      if (session) {
+        session.sendHeartbeat();
+      }
+    }
+  }, 10000); // Reduzido para 10 segundos
+
+  ws.on("message", (msg) => {
+    try {
+      const data = JSON.parse(msg.toString());
+      
+      switch (data.event) {
+        case "start":
+          console.log("🚀 Iniciando stream de segurança:", data.start.callSid);
+          
+          callSid = data.start.callSid;
+          const securityData = pendingSecurityData.get(callSid);
+          
+          if (activeSessions.has(callSid)) {
+            session = activeSessions.get(callSid);
+            session.ws = ws;
+            console.log(`🔗 WebSocket atualizado para [${callSid}]`);
+            
+            if (!session.sttStream || !session.isActive) {
+              console.log(`🔄 Reativando STT para [${callSid}]`);
+              session.setupSTT();
+            }
+          } else {
+            session = new AudioStreamSession(ws, callSid, securityData);
+            activeSessions.set(callSid, session);
+            
+            if (securityData) {
+              geminiService.generateWelcomeMessage(callSid, securityData)
+                .then(welcomeMessage => {
+                  responseQueue.addResponse(callSid, welcomeMessage);
+                })
+                .catch(error => {
+                  console.error(`❌ Erro welcome message [${callSid}]:`, error);
+                  responseQueue.addResponse(callSid, `Alerta de segurança para ${securityData.nome}! Incidente ${securityData.attack_type} detectado.`);
+                });
+            }
+          }
+          
+          pendingSecurityData.delete(callSid);
+          break;
+
+        case "media":
+          if (session && session.isActive) {
+            session.handleMedia(data.media.payload);
+          } else if (session) {
+            console.log(`🔄 Tentando reativar sessão inativa [${callSid}]`);
+            session.setupSTT();
+            if (session.isActive) {
+              session.handleMedia(data.media.payload);
+            }
+          } else if (callSid) {
+            console.log(`🔁 Criando nova sessão para mídia recebida [${callSid}]`);
+            const securityData = pendingSecurityData.get(callSid) || geminiService.userData.get(callSid);
+            session = new AudioStreamSession(ws, callSid, securityData);
+            activeSessions.set(callSid, session);
+          }
+          break;
+
+        case "stop":
+          console.log("🛑 Parando stream:", data.stop.callSid);
+          if (session) {
+            session.isActive = false;
+            console.log(`⏳ Stream parado, aguardando webhook de status... [${data.stop.callSid}]`);
+            
+            // 🔥 MELHORIA: Cleanup mais inteligente
+            setTimeout(() => {
+              if (session && activeSessions.has(data.stop.callSid)) {
+                console.log(`⏰ Timeout fallback - limpando sessão [${data.stop.callSid}]`);
+                session.cleanup();
+                activeSessions.delete(data.stop.callSid);
+              }
+            }, 45000); // Aumentado para 45 segundos
+          }
+          break;
+      }
+    } catch (error) {
+      console.error("❌ Erro processando mensagem WebSocket:", error);
+    }
+  });
+
+  ws.on("close", (code, reason) => {
+    console.log(`🔌 WebSocket fechado: ${code} - ${reason || 'Sem motivo'}`);
+    clearInterval(heartbeatInterval);
+    
+    // 🔥 MELHORIA: Lógica de reconexão melhorada
+    if (session && (code === 1001 || code === 1006)) {
+      console.log(`⏳ WebSocket desconectado, aguardando reconexão [${session.callSid}]`);
+      
+      // Mantém a sessão ativa por mais tempo aguardando reconexão
+      setTimeout(() => {
+        if (session && (!session.ws || session.ws.readyState !== WebSocket.OPEN)) {
+          console.log(`🚫 Timeout de reconexão [${session.callSid}], limpando...`);
+          session.cleanup();
+          activeSessions.delete(session.callSid);
+        }
+      }, 45000); // Aumentado para 45 segundos
+    } else if (session) {
+      // Para outros códigos de fechamento, limpa imediatamente
+      session.cleanup();
+      activeSessions.delete(session.callSid);
+    }
+  });
+
+  ws.on("error", (error) => {
+    console.error("❌ Erro WebSocket:", error);
+    clearInterval(heartbeatInterval);
+  });
+
+  ws.on("pong", () => {
+    isAlive = true;
+  });
+});
 
 // =============================
 // 🚨 DADOS PRÉ-DEFINIDOS PARA CADA TIPO DE ATAQUE
