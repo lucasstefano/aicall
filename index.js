@@ -1,12 +1,12 @@
-import express from "express";
-import twilio from "twilio";
-import WebSocket, { WebSocketServer } from "ws";
-import speech from "@google-cloud/speech";
-import textToSpeech from "@google-cloud/text-to-speech";
-import { VertexAI } from '@google-cloud/vertexai';
-import { writeFileSync, unlinkSync, existsSync, mkdirSync } from 'fs';
-import { join } from 'path';
-import nodemailer from 'nodemailer';
+const express = require("express");
+const twilio = require("twilio");
+const { WebSocketServer } = require("ws");
+const speech = require("@google-cloud/speech").v1;
+const textToSpeech = require("@google-cloud/text-to-speech");
+const { VertexAI } = require('@google-cloud/vertexai');
+const { writeFileSync, unlinkSync, existsSync, mkdirSync } = require('fs');
+const { join } = require('path');
+const nodemailer = require('nodemailer');
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
@@ -23,8 +23,7 @@ const baseUrl = process.env.BASE_URL;
 // Validação de variáveis de ambiente
 const requiredEnvVars = [
   'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_PHONE_NUMBER',
-  'BASE_URL', 'GCLOUD_PROJECT', 'GCLOUD_LOCATION',
-  'SMTP_USER', 'SMTP_PASS', 'REPORT_EMAIL'
+  'BASE_URL', 'GCLOUD_PROJECT', 'GCLOUD_LOCATION'
 ];
 
 requiredEnvVars.forEach(envVar => {
@@ -52,9 +51,9 @@ const vertex_ai = new VertexAI({
   location: process.env.GCLOUD_LOCATION,
 });
 
-const model = 'gemini-2.0-flash-001';
-const generativeModel = vertex_ai.getGenerativeModel({
-  model,
+const model = 'gemini-1.5-flash-001';
+const generativeModel = vertex_ai.preview.getGenerativeModel({
+  model: model,
   generationConfig: {
     maxOutputTokens: 256,
     temperature: 0.2,
