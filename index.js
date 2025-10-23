@@ -6,6 +6,8 @@ import textToSpeech from "@google-cloud/text-to-speech";
 import { VertexAI } from '@google-cloud/vertexai';
 import { writeFileSync, unlinkSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
+import { GoogleGenAI, Type } from '@google/genai';
+
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
@@ -46,6 +48,11 @@ if (!existsSync(audioDir)) {
 // 🧠 Configuração Vertex AI Gemini
 // =============================
 const vertex_ai = new VertexAI({
+  project: process.env.GCLOUD_PROJECT,
+  location: process.env.GCLOUD_LOCATION,
+});
+
+const ai = new GoogleGenAI({
   project: process.env.GCLOUD_PROJECT,
   location: process.env.GCLOUD_LOCATION,
 });
