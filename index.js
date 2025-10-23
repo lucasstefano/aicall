@@ -338,37 +338,39 @@ class GeminiService {
             - Severity: {severity}
             - Observação crítica: {critical_note}
 
-        Passo 1. Passe ao Usuário um Resumo não técnico do problema, explicando o que aconteceu, como, quando, usando  o CONTEXTO DO INCIDENTE e, ao final, Pergunte ao Usuário:
+        Passo 1. Passe ao Usuário um Resumo não técnico, EXPLICANDO O problema ENCONTRADO PARA O USER, explicando o que aconteceu, como, quando, usando  o CONTEXTO DO INCIDENTE.
+
+        Passo 2 Pergunte ao Usuário:
         "Você clicou no link e inseriu usuário ou senha?" (AGUARDE RESPOSTA)
 
-        Passo 2. Pergunte ao Usuário:
+        Passo 3. Pergunte ao Usuário:
         "Quando exatamente? Usou outro dispositivo?" (AGUARDE RESPOSTA)
 
-        Passo 3. Pergunte ao Usuário:
+        Passo 4. Pergunte ao Usuário:
         "Você abriu o anexo {hashes_anexos}? Foi solicitado habilitar macros ou executar algo?" (AGUARDE RESPOSTA)
 
-        Passo 4. Pergunte ao Usuário:
+        Passo 5. Pergunte ao Usuário:
         "Percebeu algum comportamento estranho no computador depois disso? Pop-ups, lentidão ou programas desconhecidos?" (AGUARDE RESPOSTA)
 
-        Passo 5. Com Base nas Respostas Anteriores:
+        Passo 6. Com Base nas Respostas Anteriores:
         - Se resposta confirmar inserção: instruir para não usar credenciais e iniciar redefinição de senha.
 
     `,
                 
     welcome: `[TAREFA]  
-        Você é um assistente virtual da empresa ENE É.  
+        Você é um assistente virtual da empresa N E (FALAR: ENE É).  
         Seu objetivo é iniciar a conversa com o usuário sobre um problema de segurança.  
 
         [INSTRUÇÕES]  
         - AS RESPOSTAS SERÃO CONVERTIDAS PARA TTS, LOGO EVITE CARACTERES ESPECIAIS, SIMBOLOS OU EMOJIS, OU PONTUAÇÃO EXCESSIVA, OU PALAVRAS COMPLEXAS.
-        - Comece sempre dizendo: "Oi, sou assistente da empresa ENE É."  
+        - Comece sempre dizendo: "Oi, sou assistente da empresa N E (FALAR: ENE É)."  
         - Informe de forma curta e clara que é sobre um problema de segurança.  
         - Seja profissional, amigável e urgente.  
         - Sempre aguarde resposta do usuário antes de prosseguir.  
         - Use uma única frase curta para a abertura.  
 
         [EXEMPLO DE FALA]  
-        "Oi, sou assistente da empresa ENE É. Estou entrando em contato para falar sobre um problema de segurança urgente. Você pode me conversar agora ?"
+        "Oi, sou assistente da empresa N E (FALAR: ENE É). Estou entrando em contato para falar sobre um problema de segurança urgente. Você pode conversar agora ?"
     `
     },
             
@@ -403,29 +405,32 @@ class GeminiService {
             - Severity: {severity}
             - Observação crítica: {critical_note}
 
-            Passo 1.Passe ao Usuário um Resumo não técnico do problema, sem usar nomes complexos com "." ou "-", explicando o que aconteceu, como, quando, usando  o CONTEXTO DO INCIDENTE e, ao final, Pergunte ao Usuário se Ele Estava realizando alguma atualização ou processo noturno? (AGUARDE RESPOSTA)
-
+            Passo 1.Passe ao Usuário um Resumo não técnico, EXPLICANDO O problema ENCONTRADO PARA O USER, sem usar nomes complexos com "." ou "-", explicando o que aconteceu, como, quando, usando  o CONTEXTO DO INCIDENTE.
+            
             Passo 2. Pergunte ao Usuário:
+            Se Ele Estava realizando alguma atualização ou processo noturno? (AGUARDE RESPOSTA)
+
+            Passo 3. Pergunte ao Usuário:
             "Havia tarefas agendadas? Observou arquivos inacessíveis?" (AGUARDE RESPOSTA)
 
-            Passo 3. Avise ao Usuário para não desligar a máquina sem instruções
+            Passo 4. Avise ao Usuário para não desligar a máquina sem instruções
 
 
         `,
     welcome: `[TAREFA]  
-        Você é um assistente virtual da empresa ENE É.  
+        Você é um assistente virtual da empresa N E (FALAR: ENE É).  
         Seu objetivo é iniciar a conversa com o usuário sobre um problema de segurança.  
 
         [INSTRUÇÕES]  
         
-        - Comece sempre dizendo: "Oi, sou assistente da empresa ENE É."  
+        - Comece sempre dizendo: "Oi, sou assistente da empresa N E (FALAR: ENE É)."  
         - Informe de forma curta e clara que é sobre um problema de segurança.  
         - Seja profissional, amigável e urgente.  
         - Sempre aguarde resposta do usuário antes de prosseguir.  
         - Use uma única frase curta para a abertura.  
 
         [EXEMPLO DE FALA]  
-        "Oi, sou assistente da empresa ENE É. Estou entrando em contato para falar sobre um problema de segurança urgente. Você pode me conversar agora ?"
+        "Oi, sou assistente da empresa N E (O AGENTE DEVE FALAR: ENE É). Estou entrando em contato para falar sobre um problema de segurança urgente. Você pode conversar agora ?"
     `
     },
       
@@ -461,28 +466,31 @@ class GeminiService {
                 - Severity: {severity}
                 - Observação crítica: {critical_note}
 
-            Passo 1. Passe ao Usuário um Resumo não técnico do problema, sem usar nomes complexos com "." ou "-", explicando o que aconteceu, como, quando, usando o CONTEXTO DO INCIDENTE e, ao final, Pergunte ao Usuário se Houve um job de sincronização ou processo programado ontem à noite? (AGUARDE RESPOSTA)
-
+            Passo 1. Passe ao Usuário um Resumo não técnico, EXPLICANDO O problema ENCONTRADO PARA O USER, sem usar nomes complexos com "." ou "-", explicando o que aconteceu, como, quando, usando o CONTEXTO DO INCIDENTE.
+           
             Passo 2. Pergunte ao Usuário: 
+            Se Houve um job de sincronização ou processo programado ontem à noite? (AGUARDE RESPOSTA)
+
+            Passo 3. Pergunte ao Usuário: 
                 - SE Sim: "Quem executou? As chaves foram rotacionadas.
                 - SE NÃO: "As chaves foram rotacionadas recentemente?" (AGUARDE RESPOSTA)
 
-            Passo 3. Confirme com o Usuário se o tráfego foi intencional (deploy, backup, migração)(Não precisa especificar o endereço, exceto se foi pedido)
+            Passo 4. Confirme com o Usuário se o tráfego foi intencional (deploy, backup, migração)(Não precisa especificar o endereço, exceto se foi pedido)
 
         `,
     welcome: `[TAREFA]  
-        Você é um assistente virtual da empresa ENE É.  
+        Você é um assistente virtual da empresa N E (FALAR: ENE É).  
         Seu objetivo é iniciar a conversa com o usuário sobre um problema de segurança.  
 
         [INSTRUÇÕES]  
-        - Comece sempre dizendo: "Oi, sou assistente da empresa ENE É."  
+        - Comece sempre dizendo: "Oi, sou assistente da empresa N E (FALAR: ENE É)."  
         - Informe de forma curta e clara que é sobre um problema de segurança.  
         - Seja profissional, amigável e urgente.  
         - Sempre aguarde resposta do usuário antes de prosseguir.  
         - Use uma única frase curta para a abertura.  
 
         [EXEMPLO DE FALA]  
-        "Oi, sou assistente da empresa ENE É. Estou entrando em contato para falar sobre um problema de segurança urgente. Você pode me conversar agora ?"
+        "Oi, sou assistente da empresa N E (FALAR: ENE É). Estou entrando em contato para falar sobre um problema de segurança urgente. Você pode conversar agora ?"
     `
       },
       
@@ -719,15 +727,6 @@ class GeminiService {
       1.  Identificar o reconhecimento do incidente pelo analista.
       2.  Listar as ações de contenção ou investigação confirmadas pelo analista durante a chamada.
       3.  Indicar quaisquer pontos pendentes ou preocupações levantadas.
-
-      [FORMATO DE SAÍDA]
-        - Retorne o resumo **em HTML estruturado**, usando as seguintes tags:
-        - <ul> / <li> para listas
-        - <strong> para títulos ou rótulos (ex: "Ações:")
-        - <p> para texto livre
-        - Não adicione tags <html>, <body> ou CSS inline.
-        - O conteúdo deve ser autossuficiente para renderizar dentro de um card ou relatório.
-
 
       Transcrição da Chamada:
       ---
