@@ -765,7 +765,7 @@ const sttConfig = {
   single_utterance: false,
   noSpeechTimeout: 30,
   enableVoiceActivityEvents: true,
-  speechEventTimeout: 2200
+  speechEventTimeout: 5000
 };
 
 // =============================
