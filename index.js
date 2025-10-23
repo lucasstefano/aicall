@@ -739,29 +739,29 @@ const geminiService = new GeminiService();
 // =============================
 // 🎯 Configuração STT
 // =============================
+// =============================
+// 🎯 Configuração STT
+// =============================
 const sttConfig = {
-  config: {
-    encoding: "MULAW",
-    sampleRateHertz: 8000,
-    languageCode: "pt-BR",
-    enableAutomaticPunctuation: true,
-    model: "phone_call",
-    useEnhanced: true,
-    speechContexts: [{
-      phrases: [
-        "Phishing", "ransomware", "exfiltration", "ataque", "segurança", "incidente",
-        "firewall", "antivírus", "quarentena", "isolamento", "mitigação",
-        "acesso", "credenciais", "senha", "vazamento", "dados", "criptografia",
-        "backup", "exfiltração", "credenciais", "macros", "malicioso"
-      ],
-      boost: 10.0
-    }]
-  },
-  interimResults: true,
-  interimResultsThreshold: 0.3,
-  single_utterance: false,
-  noSpeechTimeout: 60,
-  enableVoiceActivityEvents: true
+ config: {
+  encoding: "MULAW",
+  sampleRateHertz: 8000,
+  languageCode: "pt-BR",
+  enableAutomaticPunctuation: true,
+  model: "phone_call",
+  useEnhanced: true,
+  speechContexts: [{
+   phrases: [
+    "Phishing", "ransomware", "exfiltration", "ataque", "segurança", "incidente",
+    "firewall", "antivírus", "quarentena", "isolamento", "mitigação",
+    "acesso", "credenciais", "senha", "vazamento", "dados", "criptografia",
+    "backup", "exfiltração", "credenciais", "macros", "malicioso"
+   ],
+   boost: 10.0
+  }]
+ },
+ interimResults: true,
+ single_utterance: false
 };
 
 // =============================
@@ -797,11 +797,12 @@ class AudioStreamSession {
         .on("data", (data) => {
           this.handleSTTData(data);
         })
-        .on("error", (error) => {
-          console.error(`❌ Erro STT [${this.callSid}]:`, error);
-          this.consecutiveErrors++;
-          this.checkHealth();
-        })
+      .on("error", (error) => {
+           console.error(`❌ Erro STT [${this.callSid}]:`, error);
+           // Não espere por múltiplos erros, reinicie imediatamente.
+           this.consecutiveErrors++; // Ainda é bom contar, mas aja agora.
+           this.restartSTT(); // <-- Reinicia imediatamente
+          })
         .on("end", () => {
           console.log(`🔚 Stream STT finalizado [${this.callSid}]`);
           if (this.isActive) {
@@ -831,12 +832,11 @@ class AudioStreamSession {
     if (this.inactivityTimeout) {
       clearTimeout(this.inactivityTimeout);
     }
-    
     this.inactivityTimeout = setTimeout(() => {
-      console.log(`⏰ Timeout de inatividade [${this.callSid}], verificando...`);
-      this.checkHealth();
-    }, 30000);
-  }
+      console.log(`⏰ Timeout de inatividade [${this.callSid}], reiniciando STT por precaução...`);
+          // Força o reinício do STT para garantir que ele não esteja "preso"
+       this.restartSTT();
+      }, 30000);}
 
   startHealthCheck() {
     this.healthCheckInterval = setInterval(() => {
