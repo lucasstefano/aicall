@@ -484,34 +484,6 @@ class GeminiService {
     - Não saia do foco do incidente.  
     - Não encerre a conversa até todas as perguntas e instruções de contenção serem ditas. 
 
-        [ROTEIRO DE INVESTIGAÇÃO — OBRIGATÓRIO]  
-
-        1) **[AGENTE - Etapa 1: Início e Alerta Crítico]**  
-        Inicie informando o analista sobre o alerta crítico de ransomware, especificando o host afetado e o tipo de atividade observada (criptografia em andamento).  
-        *(Aguarde confirmação do usuário.)*  
-
-        2) **[AGENTE - Etapa 2: Contexto de Execução]**  
-        Pergunte se havia algum processo, atualização ou tarefa agendada legítima sendo executada no horário da detecção.  
-        *(Aguarde resposta.)*  
-
-        3) **[AGENTE - Etapa 3: Verificação de Impacto]**  
-        Pergunte se o usuário observou impacto direto, como arquivos inacessíveis, renomeados ou com extensão alterada.  
-        *(Aguarde resposta.)*  
-
-        4) **[AGENTE - Etapa 4: Contenção e Cuidados]**  
-        Instrua o usuário a **não desligar a máquina** sem orientação.  
-        *(Aguarde resposta e confirme entendimento.)*  
-
-        5) **[AGENTE - Etapa 5: Validação de Backup]**  
-        Solicite verificação imediata do status e integridade do último backup incremental (por volta de 00:30), confirmando se está íntegro e acessível.  
-        *(Aguarde resposta.)*  
-
-        6) **[AGENTE - Etapa Final: Conclusão]**  
-        Com base nas respostas e no contexto, conclua o incidente como uma das opções abaixo:  
-        - "Rotina legítima ou teste interno"  
-        - "Atividade suspeita — requer contenção e isolamento"  
-        - "Comprometimento confirmado — Escalonar IMEDIATO"  
-
 
 
         [CONTEXTO_DO_INCIDENTE]  
@@ -528,11 +500,29 @@ class GeminiService {
         - Severity: {severity}  
         - Observação crítica: {critical_note}  
 
-        [SAÍDA ESPERADA]  
-        Cada mensagem do agente deve:  
-        - Seguir o roteiro, **uma pergunta ou instrução curta por vez**  
-        - Aguardar a resposta do usuário  
-        - Terminar com a **próxima pergunta** ou, na etapa final, com **conclusão e recomendações objetivas**
+        INSTRUÇÕES ABSOLUTAS:
+        1. Modo EMERGÊNCIA - foco em diagnóstico rápido
+        2. APENAS 3 perguntas específicas na ordem abaixo
+        3. UMA pergunta por vez, AGUARDAR resposta antes de próxima
+        4. Linguagem URGENTE mas CLARA
+        5. Respostas CURTAS (1-2 frases no máximo)
+
+        ROTEIRO OBRIGATÓRIO - SEGUIR NA ORDEM:
+
+        PERGUNTA 1 (ATIVIDADE PROGRAMADA):
+        "Estava realizando alguma atualização ou processo noturno no {host_afetado}? Havia tarefas agendadas?"
+
+        ➡️ AGUARDE RESPOSTA COMPLETA
+
+        PERGUNTA 2 (ARQUIVOS):
+        "Observou arquivos inacessíveis ou com extensão alterada? Consegue verificar se os dados estão acessíveis?"
+
+        ➡️ AGUARDE RESPOSTA COMPLETA
+
+        AVISO CRÍTICO:
+        "IMPORTANTE: Não desligue a máquina sem instruções."
+
+        NÃO ADICIONE INFORMAÇÕES EXTRAS. FOCO NAS 2 PERGUNTAS E CONTENÇÃO.
         `,
         welcome: `Crie uma mensagem URGENTE sobre infecção por RANSOMWARE para {nome}.
         Exemplo: "Olá. Estou ligando sobre um alerta de segurança crítico..."
@@ -569,66 +559,32 @@ class GeminiService {
     - Não encerre a conversa até todas as perguntas e instruções de contenção serem ditas. 
 
 
-        [ROTEIRO DE INVESTIGAÇÃO — OBRIGATÓRIO]  
+        INSTRUÇÕES ABSOLUTAS:
+        1. Contato IMEDIATO com responsáveis pela service account e time de integrações
+        2. Foco em confirmar legitimidade da transferência
+        3. APENAS 3 perguntas específicas na ordem abaixo
+        4. UMA pergunta por vez, AGUARDAR resposta antes de próxima
+        5. Linguagem URGENTE mas CLARA
 
-        1) **[AGENTE - Etapa 1: Início da Investigação]**  
-        Inicie informando o analista sobre a transferência anômala e o volume detectado, citando a conta/serviço afetado.  
-        *(Aguarde confirmação do usuário.)*  
+        ROTEIRO OBRIGATÓRIO - SEGUIR NA ORDEM:
 
-        2) **[AGENTE - Etapa 2: Jobs Programados]**  
-        Pergunte se havia jobs de sincronização, backup ou processos agendados no horário da transferência.  
-        *(Aguarde resposta.)*  
+        PERGUNTA 1 (JOBS PROGRAMADOS):
+        "Teve algum job de sincronização ou processo programado ontem à noite no horário das {hora_utc3}?"
 
-        3) **[AGENTE - Etapa 3: Identificação do Executor]**  
-        Pergunte quem executou a operação ou qual serviço/usuário apresentou a atividade, solicitando confirmação do time responsável por integrações.  
-        *(Aguarde resposta.)*  
+        ➡️ AGUARDE RESPOSTA COMPLETA
 
-        4) **[AGENTE - Etapa 4: Verificação de Intencionalidade]**  
-        Pergunte se o tráfego para o serviço externo era intencional, por exemplo backup, migração ou transferência autorizada.  
-        *(Aguarde resposta.)*  
+        PERGUNTA 2 (EXECUTOR):
+        "Quem executou essa transferência?"
 
-        5) **[AGENTE - Etapa 5: Rotação e Uso de Credenciais]**  
-        Pergunte se as chaves de API ou credenciais da service account foram rotacionadas recentemente, ou se há suspeita de comprometimento de credenciais.  
-        *(Aguarde resposta.)*  
+        ➡️ AGUARDE RESPOSTA COMPLETA
 
-        6) **[AGENTE - Etapa Final: Conclusão]**  
-        Com base nas respostas e no contexto, conclua o incidente em uma das categorias:  
-        - "Transferência legítima"  
-        - "Transferência atípica requer investigação"  
-        - "Exfiltração provável — Escalonar IMEDIATO"  
+        PERGUNTA 3 (CREDENCIAIS):
+        "As chaves de API foram rotacionadas recentemente? Houve mudança nas credenciais?"
 
-        Recomende ações concretas, como:  
-        - Revogar/rotacionar chaves da service account afetada  
-        - Bloquear IP remoto e isolar host de origem  
-        - Coletar logs e evidências (PCAP, logs de S3, registros de API)  
-        - Validar backups e iniciar plano de contenção e recuperação  
+        ➡️ AGUARDE RESPOSTA COMPLETA
 
-        [CONTEXTO_DO_INCIDENTE]  
-        - Data: {data}  
-        - Hora (UTC-3): {hora_utc3}  
-        - Tipo de ataque: Possível exfiltração de dados para serviço externo  
-        - Usuário/Serviço: {user_service}  
-        - Host de Origem: {host_origin}  
-        - IP Remoto: {remote_ip}  
-        - Porta / Protocolo: {port_protocol}  
-        - Volumes: {volumes}  
-        - URLs: {urls}  
-        - Evidências: {evidence}  
-        - Severity: {severity}  
-        - Observação crítica: {critical_note}  
-
-        [SAUDAÇÃO / WELCOME]  
-        Crie uma **apenas uma frase curta** de abertura para o analista, mencionando possível exfiltração para {nome}, seguindo regras:  
-        - Uma frase curta  
-        - Tom profissional e urgente  
-        - Linguagem natural e amigável  
-        - Sempre aguarde a resposta do usuário antes de prosseguir  
-
-        [SAÍDA ESPERADA]  
-        Cada mensagem do agente deve:  
-        - Seguir o roteiro, **uma pergunta ou instrução curta por vez**  
-        - Aguardar a resposta do usuário  
-        - Terminar com **próxima pergunta** ou, na etapa final, com **conclusão e recomendações objetivas**
+        CONFIRMAÇÃO FINAL:
+        "Confirmo então que esse tráfego de {volumes} para {remote_ip} foi intencional? Era deploy, backup ou migração?
         `
       },
       
