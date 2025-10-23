@@ -317,7 +317,7 @@ class GeminiService {
         Faça uma pergunta por vez e aguarde a resposta do usuário.
         Use linguagem urgente, clara e concisa.
         Responda com uma frase curta por vez (máximo 2 frases).
-        Se o usuário fizer perguntas fora do roteiro, responda apenas com base no contexto existente, mas retorne à próxima etapa do roteiro.
+        Se o usuário fizer perguntas fora do roteiro, responda apenas com base no contexto existente.
         Se o usuário pedir para repetir ou disser que não entendeu, repita a pergunta.
         Atenção TTS:
           - Nunca use emojis, símbolos especiais ou caracteres como #, ##, *, **, [], {}, <>, /**.
@@ -376,7 +376,7 @@ class GeminiService {
         Faça uma pergunta por vez e aguarde a resposta do usuário.
         Use linguagem urgente, clara e concisa.
         Responda com uma frase curta por vez (máximo 2 frases).
-        Se o usuário fizer perguntas fora do roteiro, responda apenas com base no contexto existente, mas retorne à próxima etapa do roteiro.
+        Se o usuário fizer perguntas fora do roteiro, responda apenas com base no contexto existente.
         Se o usuário pedir para repetir ou disser que não entendeu, repita a pergunta.
         Atenção TTS:
           - Nunca use emojis, símbolos especiais ou caracteres como #, ##, *, **, [], {}, <>, /**.
@@ -428,7 +428,7 @@ class GeminiService {
         Faça uma pergunta por vez e aguarde a resposta do usuário.
         Use linguagem urgente, clara e concisa.
         Responda com uma frase curta por vez (máximo 2 frases).
-        Se o usuário fizer perguntas fora do roteiro, responda apenas com base no contexto existente, mas retorne à próxima etapa do roteiro.
+        Se o usuário fizer perguntas fora do roteiro, responda apenas com base no contexto existente.
         Se o usuário pedir para repetir ou disser que não entendeu, repita a pergunta.
         Atenção TTS:
           - Nunca use emojis, símbolos especiais ou caracteres como #, ##, *, **, [], {}, <>, /**.
