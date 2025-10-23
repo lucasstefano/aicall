@@ -3,7 +3,7 @@ import twilio from "twilio";
 import WebSocket, { WebSocketServer } from "ws";
 import speech from "@google-cloud/speech";
 import textToSpeech from "@google-cloud/text-to-speech";
-import { GoogleGenAI, Type } from '@google/genai';
+import { VertexAI } from '@google-cloud/vertexai';
 import { writeFileSync, unlinkSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 
@@ -43,206 +43,40 @@ if (!existsSync(audioDir)) {
 }
 
 // =============================
-// 🧠 Configuração Google GenAI
+// 🧠 Configuração Vertex AI Gemini
 // =============================
-const ai = new GoogleGenAI({
+const vertex_ai = new VertexAI({
   project: process.env.GCLOUD_PROJECT,
   location: process.env.GCLOUD_LOCATION,
 });
 
 const model = 'gemini-2.0-flash-001';
+const generativeModel = vertex_ai.getGenerativeModel({
+  model,
+  generationConfig: {
+    maxOutputTokens: 256,
+    temperature: 0.2,
+    topP: 0.8,
+  },
+});
 
 // =============================
-// 🎯 Sistema Simples de Function Calling para Q&A
+// 🎙️ Configuração Google TTS
 // =============================
-class SimpleQnAFunctionCalling {
-  constructor() {
-    this.functionDeclarations = this.getFunctionDeclarations();
-    this.conversationData = new Map(); // callSid -> array de Q&A
+const ttsConfig = {
+  voice: {
+    languageCode: 'pt-BR',
+    name: "pt-BR-Chirp3-HD-Leda",
+    ssmlGender: 'FEMALE'
+  },
+  audioConfig: {
+    audioEncoding: 'MP3',
+    sampleRateHertz: 8000,
+    speakingRate: 1.0,
+    pitch: 0.0,
+    volumeGainDb: 0.0
   }
-
-  getFunctionDeclarations() {
-    return [
-      {
-        name: 'save_conversation_qa',
-        description: 'Salva uma pergunta e resposta da conversa para registro e análise posterior',
-        parameters: {
-          type: Type.OBJECT,
-          properties: {
-            question: {
-              type: Type.STRING,
-              description: 'A pergunta feita pelo agente'
-            },
-            answer: {
-              type: Type.STRING,
-              description: 'A resposta fornecida pelo analista'
-            },
-            question_type: {
-              type: Type.STRING,
-              description: 'Tipo da pergunta para categorização',
-              enum: ['incident_confirmation', 'technical_details', 'containment_actions', 'backup_status', 'credentials_status', 'general_info']
-            },
-            importance_level: {
-              type: Type.STRING,
-              description: 'Nível de importância da informação',
-              enum: ['critical', 'high', 'medium', 'low']
-            }
-          },
-          required: ['question', 'answer']
-        }
-      }
-    ];
-  }
-
-  // 💾 EXECUTAR A FUNÇÃO DE SALVAR Q&A
-  async executeFunction(callSid, functionCall) {
-    const { name, args } = functionCall;
-    
-    console.log(`💾 Salvando Q&A para [${callSid}]:`, {
-      question: args.question?.substring(0, 50) + '...',
-      answer: args.answer?.substring(0, 50) + '...'
-    });
-
-    try {
-      switch (name) {
-        case 'save_conversation_qa':
-          return await this.saveConversationQA(callSid, args);
-        
-        default:
-          console.warn(`⚠️ Função desconhecida: ${name}`);
-          return { success: false, error: 'Função não implementada' };
-      }
-    } catch (error) {
-      console.error(`❌ Erro executando função ${name}:`, error);
-      return { success: false, error: error.message };
-    }
-  }
-
-  // 💾 SALVAR PERGUNTA E RESPOSTA
-  async saveConversationQA(callSid, data) {
-    if (!this.conversationData.has(callSid)) {
-      this.conversationData.set(callSid, []);
-    }
-
-    const qaArray = this.conversationData.get(callSid);
-    
-    const qaRecord = {
-      id: Date.now().toString(),
-      timestamp: new Date().toISOString(),
-      question: data.question,
-      answer: data.answer,
-      question_type: data.question_type || 'general_info',
-      importance_level: data.importance_level || 'medium',
-      callSid: callSid
-    };
-
-    qaArray.push(qaRecord);
-
-    console.log(`📝 Q&A salvo [${callSid}]: ${qaArray.length} registros`);
-
-    // 💾 Salvar no banco de dados (opcional)
-    await this.saveToDatabase(qaRecord);
-
-    return {
-      success: true,
-      message: 'Pergunta e resposta salvas com sucesso',
-      qa_id: qaRecord.id,
-      total_qa: qaArray.length
-    };
-  }
-
-  // 💾 SALVAR NO BANCO (EXEMPLO - OPICIONAL)
-  async saveToDatabase(qaRecord) {
-    try {
-      // Implemente sua lógica de banco de dados aqui
-      console.log(`💾 Salvando no BD: ${qaRecord.question.substring(0, 30)}... -> ${qaRecord.answer.substring(0, 30)}...`);
-      
-      // Exemplo de salvamento:
-      // await db.collection('security_qa').insertOne(qaRecord);
-      
-      return { success: true };
-    } catch (error) {
-      console.error('❌ Erro salvando no banco:', error);
-      // Não throw error aqui para não quebrar o fluxo da conversa
-      return { success: false, error: error.message };
-    }
-  }
-
-  // 📊 OBTER TODOS OS Q&A DE UMA CHAMADA
-  getConversationData(callSid) {
-    return this.conversationData.get(callSid) || [];
-  }
-
-  // 📊 OBTER ESTATÍSTICAS
-  getQnAStats(callSid) {
-    const qaArray = this.getConversationData(callSid);
-    
-    const stats = {
-      total_qa: qaArray.length,
-      by_importance: {},
-      by_type: {},
-      last_qa: qaArray[qaArray.length - 1] || null
-    };
-
-    qaArray.forEach(qa => {
-      // Contar por importância
-      stats.by_importance[qa.importance_level] = (stats.by_importance[qa.importance_level] || 0) + 1;
-      
-      // Contar por tipo
-      stats.by_type[qa.question_type] = (stats.by_type[qa.question_type] || 0) + 1;
-    });
-
-    return stats;
-  }
-
-  // 🧹 LIMPAR DADOS
-  cleanup(callSid) {
-    const qaData = this.conversationData.get(callSid);
-    if (qaData) {
-      console.log(`📊 Finalizando chamada [${callSid}]: ${qaData.length} Q&A salvos`);
-      
-      // 💾 Opcional: Salvar relatório final
-      this.saveFinalReport(callSid, qaData);
-    }
-    this.conversationData.delete(callSid);
-  }
-
-  // 📄 SALVAR RELATÓRIO FINAL (OPCIONAL)
-  async saveFinalReport(callSid, qaData) {
-    try {
-      const report = {
-        callSid,
-        export_timestamp: new Date().toISOString(),
-        total_questions: qaData.length,
-        conversation_duration: this.getConversationDuration(qaData),
-        qa_data: qaData,
-        summary: this.getQnAStats(callSid)
-      };
-
-      console.log(`📄 Relatório final [${callSid}]:`, report.summary);
-      
-      // Salvar relatório no banco ou arquivo
-      // await db.collection('conversation_reports').insertOne(report);
-      
-    } catch (error) {
-      console.error('❌ Erro salvando relatório final:', error);
-    }
-  }
-
-  // ⏱️ CALCULAR DURAÇÃO DA CONVERSA
-  getConversationDuration(qaData) {
-    if (qaData.length < 2) return '0s';
-    
-    const first = new Date(qaData[0].timestamp);
-    const last = new Date(qaData[qaData.length - 1].timestamp);
-    const durationMs = last - first;
-    
-    const minutes = Math.floor(durationMs / 60000);
-    const seconds = Math.floor((durationMs % 60000) / 1000);
-    
-    return `${minutes}m ${seconds}s`;
-  }
-}
+};
 
 // =============================
 // 🎯 Sistema de Fila para Respostas
@@ -333,17 +167,10 @@ class ResponseQueue {
     try {
       const request = {
         input: { text: text },
-        voice: {
-          languageCode: 'pt-BR',
-          name: "pt-BR-Chirp3-HD-Leda",
-          ssmlGender: 'FEMALE'
-        },
+        voice: ttsConfig.voice,
         audioConfig: {
-          audioEncoding: 'MP3',
-          sampleRateHertz: 8000,
-          speakingRate: 1.0,
-          pitch: 0.0,
-          volumeGainDb: 0.0
+          ...ttsConfig.audioConfig,
+          audioEncoding: 'MP3'
         }
       };
 
@@ -469,159 +296,179 @@ const responseQueue = new ResponseQueue();
 responseQueue.startAudioCleanupSchedule();
 
 // =============================
-// 🧠 Gemini Service com Function Calling
+// 🧠 Gemini Service com Prompts de Segurança
 // =============================
 class GeminiService {
   constructor() {
     this.conversationHistory = new Map();
     this.userData = new Map();
     this.maxHistoryLength = 6;
-    this.functionCalling = new SimpleQnAFunctionCalling();
     
     // 🔥 SISTEMA DE PROMPTS PARA INCIDENTES DE SEGURANÇA
     this.securityPrompts = {
       'phishing': {
-        system: `
-[TAREFA] Você é um agente de IA assistente de Resposta a Incidentes (IR). Sua missão é iniciar um contato de voz com um analista de segurança (o usuário) para investigar um alerta crítico de segurança.
+    system: `
+        [TAREFA] Você é um agente de IA assistente de Resposta a Incidentes (IR). Sua missão é iniciar um contato de voz com um analista de segurança (o usuário) para investigar um alerta crítico de segurança.
+        Seu objetivo é determinar rapidamente se a atividade detectada foi uma ação legítima (mas atípica) ou uma exfiltração de dados maliciosa.
+        Você deve iniciar a conversa e seguir rigorosamente o [Roteiro de Investigação] abaixo. Toda a sua análise e respostas devem se basear apenas no [Contexto do Incidente] fornecido.
 
-INSTRUÇÃO IMPORTANTE: 
-SEMPRE que o analista responder uma pergunta importante, use a função save_conversation_qa para salvar a pergunta e resposta.
+        CONTEXTO DO INCIDENTE:
+        - Data: {data}
+        - Hora (UTC-3): {hora_utc3}
+        - Tipo de ataque: Phishing com possível validação de credenciais (link malicioso / formulário falso)
+        - Usuário afetado: {user_service}
+        - IP de Origem (cliente): {ip_origem_cliente}
+        - IP de Origem (remoto): {ip_origem_remoto}
+        - IP de Destino: {ip_destino}
+        - Porta / Protocolo: {port_protocol}
+        - Domínio / URL malicioso: {urls}
+        - Assinaturas / IoCs: {signatures_iocs}
+        - Hashes / anexos: {hashes_anexos}
+        - Evidências: {evidence}
+        - Severity: {severity}
+        - Observação crítica: {critical_note}
 
-EXEMPLOS QUANDO USAR A FUNÇÃO:
-- Analista confirma se havia job programado → SALVAR
-- Analista informa status do backup → SALVAR  
-- Analista confirma comprometimento de credenciais → SALVAR
-- Analista fornece detalhes técnicos importantes → SALVAR
+        ROTEIRO DE INVESTIGAÇÃO (OBRIGATÓRIO)
 
-Mantenha a conversa natural. Após salvar, continue com a próxima pergunta.
+        [AGENTE - Etapa 1: Início] 
+        "Olá. Estou ligando sobre um alerta de segurança crítico de ontem à noite. Detectamos uma transferência de dados muito alta, 18 GB, associada à conta 'svc-integration'."
 
-CONTEXTO DO INCIDENTE:
-- Tipo: Phishing com possível validação de credenciais
-- Usuário afetado: {user_service}
-- IP de Origem: {ip_origem_cliente}
-- Domínio malicioso: {urls}
-- Severidade: {severity}
+        (Aguarde a confirmação do usuário)
 
-ROTEIRO DE INVESTIGAÇÃO:
+        [AGENTE - Etapa 2: Pergunta sobre Job] 
+        "Houve algum job de sincronização ou processo de backup programado ontem à noite, por volta das 23:05?"
 
-[AGENTE - Etapa 1: Início] 
-"Olá. Estou ligando sobre um alerta de segurança crítico. Detectamos uma transferência de dados muito alta associada à conta 'svc-integration'."
+        (Aguarde a resposta. Com base na resposta, prossiga)
 
-[AGENTE - Etapa 2: Pergunta sobre Job] 
-"Houve algum job de sincronização ou processo de backup programado?"
+        [AGENTE - Etapa 3: Pergunta sobre Intenção] 
+        "Preciso confirmar se esse tráfego para um S3 externo foi intencional. O time de integrações informou que não era um deploy."
 
-[AGENTE - Etapa 3: Pergunta sobre Intenção] 
-"Preciso confirmar se esse tráfego para um S3 externo foi intencional."
+        (Aguarde a resposta. Prossiga)
 
-[AGENTE - Etapa 4: Pergunta sobre Credenciais] 
-"As chaves de API usadas foram rotacionadas recentemente ou há suspeita de comprometimento?"
+        [AGENTE - Etapa 4: Pergunta sobre Credenciais] 
+        "Certo. Estamos analisando a chave de API usada. As chaves dessa conta de serviço ('svc-integration') foram rotacionadas recentemente ou há suspeita de comprometimento?"
 
-INSTRUÇÕES ESPECÍFICAS:
-- Siga o roteiro passo a passo
-- Aguarde a resposta do usuário antes de prosseguir
-- Use a função para salvar respostas importantes
-- Mantenha tom profissional e urgente
-- Mantenha 1 frase por resposta`,
+        (Aguarde a resposta e colete as informações finais)
+
+        INSTRUÇÕES ESPECÍFICAS:
+        - Siga rigorosamente o roteiro passo a passo
+        - Aguarde a resposta do usuário antes de prosseguir para a próxima etapa
+        - Adapte-se às respostas do usuário mantendo o foco na investigação
+        - Use tom profissional e urgente
+        - Mantenha 1 frase por resposta
+        - Foque em determinar a legitimidade da atividade`,
                 
-        welcome: `Crie uma mensagem inicial urgente sobre incidente de PHISHING para {nome}.
-        Exemplo: "Olá. Estou ligando sobre um alerta de segurança crítico. Detectamos uma transferência de dados muito alta associada à conta 'svc-integration'."`
-      },
+    welcome: `Crie uma mensagem inicial urgente sobre incidente de PHISHING para {nome}.
+        Exemplo: "Olá. Estou ligando sobre um alerta de segurança crítico. Detectamos uma transferência de dados muito alta, 18 GB, associada à conta 'svc-integration'."`
+    },
             
       'ransomware': {
         system: `
-[TAREFA] Você é um agente de IA assistente de Resposta a Incidentes (IR). Sua missão é investigar um alerta crítico de RANSOMWARE.
-
-INSTRUÇÃO IMPORTANTE: 
-SEMPRE que o analista responder uma pergunta importante, use a função save_conversation_qa para salvar a pergunta e resposta.
+[TAREFA] Você é um agente de IA assistente de Resposta a Incidentes (IR). Sua missão é iniciar um contato de voz com um analista de segurança (o usuário) para investigar um alerta crítico de RANSOMWARE.
 
 CONTEXTO DO INCIDENTE:
-- Tipo: Ransomware
+- Data: {data}
+- Hora (UTC-3): {hora_utc3}
+- Tipo de ataque: Ransomware (processo que executou rotina de criptografia)
 - Host afetado: {host_afetado}
+- IP de Origem (interno): {ip_origem_host_interno}
+- IPs Remotos: {ips_remotos}
+- Porta / Protocolo: {port_protocol}
 - Processos: {processos}
-- Severidade: {severity}
+- Evidências: {evidence}
+- Hash do binário: {hash_binario}
+- Severity: {severity}
+- Observação crítica: {critical_note}
 
-ROTEIRO DE INVESTIGAÇÃO:
+ROTEIRO DE INVESTIGAÇÃO (OBRIGATÓRIO)
 
 [AGENTE - Etapa 1: Início e Alerta Crítico]
 "Alerta crítico de ransomware no servidor {host_afetado}. Detectamos atividade de criptografia em andamento."
 
 [AGENTE - Etapa 2: Perguntas de Contexto]
-"Estava realizando alguma atualização ou processo noturno no servidor?"
+"Estava realizando alguma atualização ou processo noturno no servidor? Havia tarefas agendadas para execução?"
 
 [AGENTE - Etapa 3: Verificação de Impacto]
 "Observou arquivos inacessíveis ou com extensão alterada no sistema?"
 
 [AGENTE - Etapa 4: Instrução de Contenção]
-"Importante: não desligue a máquina sem instruções específicas."
+"Importante: não desligue a máquina sem instruções específicas. Podemos precisar de snapshot forense para investigação."
 
 [AGENTE - Etapa 5: Verificação de Backup]
-"Verifique imediatamente o status de integridade do último backup."
+"Verifique imediatamente o status de integridade do último backup incremental de ontem às 00:30."
 
 INSTRUÇÕES ESPECÍFICAS:
 - Mantenha tom de URGÊNCIA MÁXIMA
-- Use a função para salvar respostas importantes
-- Foque em contenção imediata
+- Foque em contenção imediata do ransomware
 - Priorize verificação de backups
-- Mantenha 1-2 frases por resposta`,
+- Alerte sobre importância de não desligar o sistema
+- Mantenha 1-2 frases por resposta
+- Siga o roteiro sequencialmente`,
         welcome: `Crie uma mensagem URGENTE sobre infecção por RANSOMWARE para {nome}.
-Destaque: servidor {host_afetado}, processo {processos}, criticalidade CRÍTICA.`
+Destaque: servidor {host_afetado}, processo {processos}, criticalidade CRÍTICA.
+Enfatize a necessidade de ação IMEDIATA e contenção.`
       },
       
       'exfiltration': {
         system: `
 [TAREFA] Você é um agente de IA assistente de Resposta a Incidentes (IR). Sua missão é investigar uma possível exfiltração de dados.
 
-INSTRUÇÃO IMPORTANTE: 
-SEMPRE que o analista responder uma pergunta importante, use a função save_conversation_qa para salvar a pergunta e resposta.
-
 CONTEXTO DO INCIDENTE:
-- Tipo: Possível exfiltração de dados
+- Data: {data}
+- Hora (UTC-3): {hora_utc3}
+- Tipo de ataque: Possível exfiltração de dados para serviço externo
 - Usuário/Serviço: {user_service}
+- Host de Origem: {host_origin}
+- IP Remoto: {remote_ip}
+- Porta / Protocolo: {port_protocol}
 - Volumes: {volumes}
-- Severidade: {severity}
+- URLs: {urls}
+- Evidências: {evidence}
+- Severity: {severity}
+- Observação crítica: {critical_note}
 
-ROTEIRO DE INVESTIGAÇÃO:
+ROTEIRO DE INVESTIGAÇÃO (OBRIGATÓRIO)
 
 [AGENTE - Etapa 1: Início da Investigação]
-"Investigando transferência anômala de dados da conta {user_service}."
+"Investigando transferência anômala de dados da conta {user_service}. Detectamos 18 GB transferidos em 7 minutos."
 
 [AGENTE - Etapa 2: Pergunta sobre Jobs Programados]
-"Houve algum job de sincronização ou processo programado?"
+"Houve algum job de sincronização ou processo programado ontem à noite às 23:05?"
 
 [AGENTE - Etapa 3: Identificação do Executor]
-"Quem executou essa operação?"
+"Quem executou essa operação? O time de integrações confirmou que não era um deploy."
 
 [AGENTE - Etapa 4: Verificação de Intencionalidade]
-"Preciso confirmar se esse tráfego foi intencional - era um backup, migração ou processo legítimo?"
+"Preciso confirmar se esse tráfego para o S3 externo foi intencional - era um backup, migração ou processo legítimo?"
 
 [AGENTE - Etapa 5: Rotação de Credenciais]
-"As chaves de API da service account foram rotacionadas recentemente?"
+"As chaves de API da service account foram rotacionadas recentemente? Há suspeita de comprometimento?"
 
 INSTRUÇÕES ESPECÍFICAS:
-- Use a função para salvar respostas importantes
 - Foque em determinar legitimidade da transferência
 - Investigue possível abuso de credenciais
-- Mantenha tom investigativo e urgente`,
+- Verifique se foi ação autorizada
+- Mantenha tom investigativo e urgente
+- Siga o roteiro passo a passo`,
         welcome: `Crie uma mensagem sobre possível EXFILTRAÇÃO DE DADOS para {nome}.
-Mencione: conta {user_service}, volume {volumes}.`
+Mencione: conta {user_service}, volume {volumes}, destino {remote_ip}.
+Destaque a necessidade de verificação imediata da legitimidade.`
       },
       
       'default': {
         system: `Você é um especialista em segurança cibernética.
-
-INSTRUÇÃO IMPORTANTE: 
-SEMPRE que o analista responder uma pergunta importante, use a função save_conversation_qa para salvar a pergunta e resposta.
-
 DADOS DO INCIDENTE:
 - Tipo: {attack_type}
 - Severidade: {severity}
 - Usuário/Serviço: {user_service}
+- Host Origem: {host_origin}
+- IP Remoto: {remote_ip}
 
 Instruções:
 - Responda com 1-2 frases focadas em ação imediata
-- Use a função para salvar informações importantes
 - Mantenha tom profissional e urgente
-- Ofereça orientações claras de contenção`,
+- Ofereça orientações claras de contenção
+- Adapte-se à severidade do incidente`,
         welcome: `Crie uma mensagem de alerta de segurança para {nome} sobre: {attack_type}
 Baseie-se na severidade {severity} e dados fornecidos.`
       }
@@ -671,16 +518,9 @@ Baseie-se na severidade {severity} e dados fornecidos.`
 
       console.log(`🎯 Gerando mensagem [${attack_type}-${severity}] para: ${nome}`);
       
-      const response = await ai.models.generateContent({
-        model: model,
-        contents: prompt,
-        config: {
-          temperature: 0.2,
-          maxOutputTokens: 200,
-        },
-      });
-      
-      const welcomeMessage = response.text.replace(/\*/g, '').trim();
+      const result = await generativeModel.generateContent(prompt);
+      const response = result.response;
+      const welcomeMessage = response.candidates[0].content.parts[0].text.replace(/\*/g, '').trim();
       
       console.log(`🤖 Mensagem de segurança [${attack_type}]: ${welcomeMessage}`);
       
@@ -692,148 +532,69 @@ Baseie-se na severidade {severity} e dados fornecidos.`
     }
   }
 
-  // 🔥 MÉTODO SIMPLIFICADO COM FUNCTION CALLING
-// =============================
-// 🧠 Gemini Service - Método generateResponse ATUALIZADO
-// =============================
-async generateResponse(callSid, userMessage) {
-  try {
-    const history = this.getConversationHistory(callSid);
-    const securityData = this.userData.get(callSid);
-    
-    if (!securityData) {
-      console.error(`❌ Dados de segurança não encontrados para [${callSid}]`);
-      return "Estou com problemas técnicos. Por favor, tente novamente.";
-    }
-
-    // 🔥 FILTRAR MENSAGENS VAZIAS OU MUITO CURTAS
-    const cleanMessage = userMessage.trim();
-    if (cleanMessage.length < 2) {
-      console.log(`⚠️ Mensagem muito curta ignorada: "${cleanMessage}"`);
-      return "Não consegui ouvir. Pode repetir?";
-    }
-
-    console.log(`🧠 Processando [${callSid}]: "${cleanMessage.substring(0, 100)}"`);
-
-    const recentHistory = history.slice(-3);
-    const prompt = this.buildEnhancedPrompt(cleanMessage, recentHistory, securityData);
-
-    // 🎯 CONFIGURAÇÃO MELHORADA
-    const response = await ai.models.generateContent({
-      model: model,
-      contents: prompt,
-      config: {
-        tools: [{
-          functionDeclarations: this.functionCalling.functionDeclarations
-        }],
-        temperature: 0.3, // Aumentado para mais flexibilidade
-        maxOutputTokens: 150, // Respostas mais curtas
-        topP: 0.8,
-      },
-    });
-
-    let finalResponse = '';
-
-    // 🔄 PROCESSAR FUNCTION CALL SE EXISTIR
-    if (response.functionCalls && response.functionCalls.length > 0) {
-      const functionCall = response.functionCalls[0];
+  async generateResponse(callSid, userMessage) {
+    try {
+      const history = this.getConversationHistory(callSid);
+      const securityData = this.userData.get(callSid);
       
-      console.log(`💾 Function call detectado: ${functionCall.name}`, {
-        question: functionCall.args.question?.substring(0, 50),
-        answer: functionCall.args.answer?.substring(0, 50)
-      });
+      if (!securityData) {
+        throw new Error('Dados de segurança não encontrados');
+      }
       
-      // Executar função para salvar Q&A
-      const functionResult = await this.functionCalling.executeFunction(callSid, functionCall);
-      console.log(`✅ Função executada:`, functionResult);
+      const { nome, attack_type, severity, user_service, host_origin, remote_ip,
+        data, hora_utc3, ip_origem_cliente, ip_origem_remoto, ip_destino, 
+        port_protocol, urls, signatures_iocs, hashes_anexos, evidence, 
+        critical_note, host_afetado, ip_origem_host_interno, ips_remotos,
+        processos, hash_binario, volumes } = securityData;
       
-      // Usar a resposta normal do Gemini
-      finalResponse = response.text || 'Obrigado pela informação. Vamos continuar.';
-    } else {
-      // 📝 RESPOSTA NORMAL SEM FUNCTION CALL
-      finalResponse = response.text || 'Pode continuar, estou acompanhando.';
+      const recentHistory = history.slice(-3);
+      
+      const prompt = this.buildSecurityPrompt(userMessage, recentHistory, securityData);
+      
+      console.log(`🧠 Gemini [${callSid} - ${attack_type} - ${severity}]: "${userMessage.substring(0, 50)}..."`);
+      
+      const result = await generativeModel.generateContent(prompt);
+      const response = result.response;
+      
+      if (!response.candidates || !response.candidates[0]) {
+        throw new Error('Resposta vazia do Gemini');
+      }
+      
+      const text = response.candidates[0].content.parts[0].text.replace(/\*/g, '').trim();
+      
+      if (!text || text.length < 2) {
+        throw new Error('Resposta muito curta do Gemini');
+      }
+      
+      this.updateConversationHistory(callSid, userMessage, text);
+      
+      console.log(`🤖 Resposta [${callSid} - ${attack_type}]: "${text.substring(0, 50)}..."`);
+      
+      return text;
+      
+    } catch (error) {
+      console.error(`❌ Erro Gemini [${callSid}]:`, error);
+      
+      const fallbacks = [
+        "Repita por favor, não entendi a instrução.",
+        "Confirmando os procedimentos de segurança. Pode detalhar?",
+        "Não capturei completamente. Pode reformular o comando?",
+        "Verificando protocolo de resposta. Pode repetir a orientação?"
+      ];
+      
+      return fallbacks[Math.floor(Math.random() * fallbacks.length)];
     }
-
-    // 🛡️ VALIDAÇÃO DA RESPOSTA
-    if (!finalResponse || finalResponse.length < 2) {
-      console.warn(`⚠️ Resposta muito curta do Gemini: "${finalResponse}"`);
-      finalResponse = "Pode reformular sua resposta? Não entendi completamente.";
-    }
-
-    // 📝 ATUALIZAR HISTÓRICO
-    this.updateConversationHistory(callSid, cleanMessage, finalResponse);
-    
-    console.log(`🤖 Resposta [${callSid}]: "${finalResponse.substring(0, 80)}"`);
-
-    return finalResponse;
-
-  } catch (error) {
-    console.error(`❌ Erro Gemini [${callSid}]:`, error);
-    
-    // 🔄 FALLBACKS MAIS INTELIGENTES
-    const fallbacks = [
-      "Não consegui processar. Pode repetir mais devagar?",
-      "O áudio pode ter cortado. Pode refazer a pergunta?",
-      "Estou com dificuldade técnica. Pode tentar novamente?",
-      "Não capturei completamente. Pode reformular?"
-    ];
-    
-    return fallbacks[Math.floor(Math.random() * fallbacks.length)];
-  }
-}
-
-// 🎯 PROMPT MELHORADO
-buildEnhancedPrompt(userMessage, history, securityData) {
-  const { nome, attack_type, severity } = securityData;
-  
-  const promptConfig = this.securityPrompts[attack_type] || this.securityPrompts.default;
-  
-  let prompt = promptConfig.system
-    .replace(/{nome}/g, nome)
-    .replace(/{attack_type}/g, attack_type)
-    .replace(/{severity}/g, severity)
-    .replace(/{user_service}/g, securityData.user_service || '')
-    .replace(/{host_origin}/g, securityData.host_origin || '')
-    .replace(/{remote_ip}/g, securityData.remote_ip || '')
-    .replace(/{data}/g, securityData.data || '')
-    .replace(/{hora_utc3}/g, securityData.hora_utc3 || '')
-    .replace(/{ip_origem_cliente}/g, securityData.ip_origem_cliente || '')
-    .replace(/{ip_origem_remoto}/g, securityData.ip_origem_remoto || '')
-    .replace(/{ip_destino}/g, securityData.ip_destino || '')
-    .replace(/{port_protocol}/g, securityData.port_protocol || '')
-    .replace(/{urls}/g, securityData.urls || '')
-    .replace(/{signatures_iocs}/g, securityData.signatures_iocs || '')
-    .replace(/{hashes_anexos}/g, securityData.hashes_anexos || '')
-    .replace(/{evidence}/g, securityData.evidence || '')
-    .replace(/{critical_note}/g, securityData.critical_note || '')
-    .replace(/{host_afetado}/g, securityData.host_afetado || '')
-    .replace(/{ip_origem_host_interno}/g, securityData.ip_origem_host_interno || '')
-    .replace(/{ips_remotos}/g, securityData.ips_remotos || '')
-    .replace(/{processos}/g, securityData.processos || '')
-    .replace(/{hash_binario}/g, securityData.hash_binario || '')
-    .replace(/{volumes}/g, securityData.volumes || '');
-
-  // 🔥 ADICIONAR CONTEXTO DE CONVERSA
-  prompt += `\n\nCONTEXTO ATUAL DA CONVERSA:`;
-  
-  if (history.length > 0) {
-    history.forEach(([user, assistant], index) => {
-      prompt += `\n[${index + 1}] Analista: ${user}`;
-      prompt += `\n[${index + 1}] Você: ${assistant}`;
-    });
-  } else {
-    prompt += `\n[Início da conversa]`;
   }
 
-  prompt += `\n\nRESPOSTA MAIS RECENTE DO ANALISTA: "${userMessage}"`;
-  prompt += `\n\nSUA PRÓXIMA RESPOSTA (seja natural, direto, 1-2 frases, use função quando relevante):`;
-
-  return prompt;
-}
-
-  // 🎯 PROMPT SIMPLIFICADO PARA Q&A
-  buildSimplePrompt(userMessage, history, securityData) {
-    const { nome, attack_type, severity } = securityData;
+  // 🔥 CONSTRUIR PROMPT COM DADOS COMPLETOS DE SEGURANÇA
+  buildSecurityPrompt(userMessage, history, securityData) {
+    const { 
+      nome, attack_type, severity, user_service, host_origin, remote_ip,
+      data, hora_utc3, ip_origem_cliente, ip_origem_remoto, ip_destino, 
+      port_protocol, urls, signatures_iocs, hashes_anexos, evidence, 
+      critical_note, host_afetado, ip_origem_host_interno, ips_remotos,
+      processos, hash_binario, volumes
+    } = securityData;
     
     const promptConfig = this.securityPrompts[attack_type] || this.securityPrompts.default;
     
@@ -841,48 +602,38 @@ buildEnhancedPrompt(userMessage, history, securityData) {
       .replace(/{nome}/g, nome)
       .replace(/{attack_type}/g, attack_type)
       .replace(/{severity}/g, severity)
-      .replace(/{user_service}/g, securityData.user_service || '')
-      .replace(/{host_origin}/g, securityData.host_origin || '')
-      .replace(/{remote_ip}/g, securityData.remote_ip || '')
-      .replace(/{data}/g, securityData.data || '')
-      .replace(/{hora_utc3}/g, securityData.hora_utc3 || '')
-      .replace(/{ip_origem_cliente}/g, securityData.ip_origem_cliente || '')
-      .replace(/{ip_origem_remoto}/g, securityData.ip_origem_remoto || '')
-      .replace(/{ip_destino}/g, securityData.ip_destino || '')
-      .replace(/{port_protocol}/g, securityData.port_protocol || '')
-      .replace(/{urls}/g, securityData.urls || '')
-      .replace(/{signatures_iocs}/g, securityData.signatures_iocs || '')
-      .replace(/{hashes_anexos}/g, securityData.hashes_anexos || '')
-      .replace(/{evidence}/g, securityData.evidence || '')
-      .replace(/{critical_note}/g, securityData.critical_note || '')
-      .replace(/{host_afetado}/g, securityData.host_afetado || '')
-      .replace(/{ip_origem_host_interno}/g, securityData.ip_origem_host_interno || '')
-      .replace(/{ips_remotos}/g, securityData.ips_remotos || '')
-      .replace(/{processos}/g, securityData.processos || '')
-      .replace(/{hash_binario}/g, securityData.hash_binario || '')
-      .replace(/{volumes}/g, securityData.volumes || '');
+      .replace(/{user_service}/g, user_service)
+      .replace(/{host_origin}/g, host_origin)
+      .replace(/{remote_ip}/g, remote_ip)
+      .replace(/{data}/g, data)
+      .replace(/{hora_utc3}/g, hora_utc3)
+      .replace(/{ip_origem_cliente}/g, ip_origem_cliente || '')
+      .replace(/{ip_origem_remoto}/g, ip_origem_remoto || '')
+      .replace(/{ip_destino}/g, ip_destino || '')
+      .replace(/{port_protocol}/g, port_protocol)
+      .replace(/{urls}/g, urls)
+      .replace(/{signatures_iocs}/g, signatures_iocs || '')
+      .replace(/{hashes_anexos}/g, hashes_anexos || '')
+      .replace(/{evidence}/g, evidence)
+      .replace(/{critical_note}/g, critical_note)
+      .replace(/{host_afetado}/g, host_afetado || '')
+      .replace(/{ip_origem_host_interno}/g, ip_origem_host_interno || '')
+      .replace(/{ips_remotos}/g, ips_remotos || '')
+      .replace(/{processos}/g, processos || '')
+      .replace(/{hash_binario}/g, hash_binario || '')
+      .replace(/{volumes}/g, volumes || '');
 
     if (history.length > 0) {
       history.forEach(([user, assistant]) => {
-        prompt += `\nAnalista: ${user}`;
+        prompt += `\nUsuário: ${user}`;
         prompt += `\nVocê: ${assistant}`;
       });
     }
 
-    prompt += `\n\nAnalista: ${userMessage}`;
-    prompt += `\n\nSua resposta (seja natural, salve informações importantes):`;
+    prompt += `\n\nUsuário: ${userMessage}`;
+    prompt += `\n\nSua resposta (curta, seguindo o roteiro, para ${nome}):`;
 
     return prompt;
-  }
-
-  // 📊 OBTER DADOS DA CONVERSA
-  getConversationData(callSid) {
-    return this.functionCalling.getConversationData(callSid);
-  }
-
-  // 📊 OBTER ESTATÍSTICAS
-  getConversationStats(callSid) {
-    return this.functionCalling.getQnAStats(callSid);
   }
 
   getConversationHistory(callSid) {
@@ -899,13 +650,14 @@ buildEnhancedPrompt(userMessage, history, securityData) {
     if (history.length > this.maxHistoryLength) {
       history.splice(0, history.length - this.maxHistoryLength);
     }
+    
+    this.conversationHistory.set(callSid, history);
   }
 
   cleanup(callSid) {
     this.conversationHistory.delete(callSid);
     this.userData.delete(callSid);
-    this.functionCalling.cleanup(callSid);
-    console.log(`🧹 Dados limpos para [${callSid}]`);
+    console.log(`🧹 Histórico de segurança limpo para [${callSid}]`);
   }
 }
 
@@ -1262,7 +1014,7 @@ const SECURITY_INCIDENTS = {
   'phishing': {
     data: '2025-10-22',
     hora_utc3: '09:18',
-    attack_type: 'phishing',
+    attack_type: 'Phishing',
     severity: 'ALTO',
     user_service: 'joao.souza@empresa.com',
     host_origin: 'WORKSTATION-045',
@@ -1275,6 +1027,7 @@ const SECURITY_INCIDENTS = {
     hashes_anexos: 'invoice_0922.doc (detected macro) — SHA256: fa3b...9c2',
     evidence: 'Logs de proxy mostram POST com credenciais; gateway e-mail marcou como suspicious but delivered; endpoint AV flagged macro attempt',
     critical_note: 'Usuário informou via chat que "clicou no link e inseriu a senha" — ação imediata necessária.',
+    // Propriedades mapeadas para compatibilidade
     remote_ip: '185.62.128.44',
     volumes: 'Credenciais potencialmente comprometidas'
   },
@@ -1292,6 +1045,7 @@ const SECURITY_INCIDENTS = {
     evidence: 'EDR detectou criação massiva de arquivos .enc; volume shadow copies deletadas; logs mostram acessos a shares \\\\fileserver\\finance',
     hash_binario: 'b4c2...e11',
     critical_note: 'Backups aumentaram I/O mas última cópia incremental foi ontem às 00:30 — verificar integridade.',
+    // Propriedades mapeadas para compatibilidade
     user_service: 'srv-finance-03.corp.local',
     host_origin: 'srv-finance-03.corp.local',
     remote_ip: '45.77.123.9, 104.21.12.34',
@@ -1409,6 +1163,7 @@ app.post("/make-call", async (req, res) => {
     console.log(`✅ Chamada de segurança iniciada: ${call.sid}`);
     console.log(`👤 Responsável: ${nome}`);
     console.log(`🎯 Incidente: ${incidentType} - ${baseIncident.severity}`);
+    console.log(`📊 Dados: ${baseIncident.user_service} → ${baseIncident.remote_ip}`);
     
     pendingSecurityData.set(call.sid, securityData);
     
@@ -1419,69 +1174,11 @@ app.post("/make-call", async (req, res) => {
       incident_type: incidentType,
       severity: baseIncident.severity,
       numero_formatado: to,
-      datetime: datetime
+      datetime: datetime,
+      features: ["STT", "Gemini AI", "Google TTS", "Resposta a incidentes", "Dados de segurança completos"]
     });
   } catch (error) {
     console.error("❌ Erro criando chamada de segurança:", error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// =============================
-// 📊 Endpoints para Dados Coletados
-// =============================
-
-// Endpoint para ver Q&A em tempo real
-app.get("/conversation-data/:callSid", (req, res) => {
-  const { callSid } = req.params;
-  
-  try {
-    const qaData = geminiService.getConversationData(callSid);
-    const stats = geminiService.getConversationStats(callSid);
-
-    res.json({
-      callSid,
-      timestamp: new Date().toISOString(),
-      total_questions: qaData.length,
-      qa_data: qaData,
-      stats: stats
-    });
-  } catch (error) {
-    console.error("❌ Erro obtendo dados da conversa:", error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Endpoint para exportar conversa completa
-app.get("/export-conversation/:callSid", (req, res) => {
-  const { callSid } = req.params;
-  
-  try {
-    const qaData = geminiService.getConversationData(callSid);
-    const securityData = geminiService.userData.get(callSid);
-
-    const exportData = {
-      metadata: {
-        callSid,
-        export_timestamp: new Date().toISOString(),
-        incident_type: securityData?.attack_type,
-        analyst_name: securityData?.nome,
-        severity: securityData?.severity
-      },
-      conversation_qa: qaData,
-      summary: {
-        total_questions: qaData.length,
-        conversation_duration: qaData.length > 0 ? 
-          new Date(qaData[qaData.length-1].timestamp) - new Date(qaData[0].timestamp) : 0
-      }
-    };
-
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Content-Disposition', `attachment; filename=conversation-${callSid}.json`);
-    
-    res.send(JSON.stringify(exportData, null, 2));
-  } catch (error) {
-    console.error("❌ Erro exportando conversa:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -1511,8 +1208,23 @@ app.get("/health", (req, res) => {
     timestamp: new Date().toISOString(),
     active_sessions: activeSessions.size,
     pending_incidents: pendingSecurityData.size,
-    features: ["STT", "Gemini AI", "Google TTS", "Function Calling", "Q&A Saving"]
+    features: ["STT", "Gemini AI", "Google TTS", "Resposta a incidentes", "Dados completos de segurança"],
+    incident_types: ["phishing", "ransomware", "exfiltration"]
   });
+});
+
+// Middleware de segurança
+app.use((req, res, next) => {
+  const clientIP = req.ip || req.connection.remoteAddress;
+  console.log(`🌐 Requisição: ${req.method} ${req.url} - IP: ${clientIP}`);
+  next();
+});
+
+// CORS para o frontend
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+  next();
 });
 
 // Endpoint para cancelar chamadas
@@ -1624,7 +1336,6 @@ app.get("/", (req, res) => {
         </style>
         <script>
           let selectedIncident = 'phishing';
-          let currentCallSid = null;
           
           function selectIncident(type, name) {
             const cards = document.querySelectorAll('.incident-card');
@@ -1664,7 +1375,7 @@ app.get("/", (req, res) => {
             return textMap[type];
           }
           
-          async function makeCall() {
+          function makeCall() {
             const nome = document.getElementById('nome').value;
             const telefone = document.getElementById('telefone').value;
             
@@ -1673,103 +1384,31 @@ app.get("/", (req, res) => {
               return;
             }
             
-            try {
-              const response = await fetch('/make-call', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                  nome: nome,
-                  to: telefone,
-                  incident_type: selectedIncident
-                })
-              });
-              
-              const data = await response.json();
-              
-              if (response.ok) {
-                currentCallSid = data.sid;
-                alert('Chamada de segurança iniciada! SID: ' + data.sid);
-                startMonitoring(data.sid);
-              } else {
-                alert('Erro: ' + data.error);
-              }
-            } catch (error) {
-              alert('Erro ao iniciar chamada: ' + error.message);
-            }
-          }
-          
-          function startMonitoring(callSid) {
-            // Iniciar monitoramento dos dados coletados
-            setInterval(() => refreshCollectedData(callSid), 5000);
-          }
-          
-          async function refreshCollectedData(callSid) {
-            if (!callSid) return;
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/make-call';
             
-            try {
-              const response = await fetch('/conversation-data/' + callSid);
-              const data = await response.json();
-              
-              if (response.ok) {
-                displayCollectedData(data);
-              }
-            } catch (error) {
-              console.log('Erro ao carregar dados:', error);
-            }
-          }
-          
-          function displayCollectedData(data) {
-            const container = document.getElementById('collectedData');
+            const nomeInput = document.createElement('input');
+            nomeInput.type = 'hidden';
+            nomeInput.name = 'nome';
+            nomeInput.value = nome;
             
-            if (data.qa_data.length === 0) {
-              container.innerHTML = '<div style="text-align: center; color: #a0a0a0;">Aguardando dados da conversa...</div>';
-              return;
-            }
+            const telInput = document.createElement('input');
+            telInput.type = 'hidden';
+            telInput.name = 'to';
+            telInput.value = telefone;
             
-            let html = '<h4>📊 Dados Coletados da Conversa</h4>';
-            html += '<div style="font-size: 14px; margin-bottom: 15px;">';
-            html += \`<strong>Total de Q&A:</strong> \${data.total_questions}\`;
-            html += \` | <strong>Importância:</strong> \${JSON.stringify(data.stats.by_importance)}\`;
-            html += '</div>';
+            const incidentInput = document.createElement('input');
+            incidentInput.type = 'hidden';
+            incidentInput.name = 'incident_type';
+            incidentInput.value = selectedIncident;
             
-            data.qa_data.forEach((qa, index) => {
-              html += \`
-                <div style="background: #2a3a4f; padding: 15px; margin: 10px 0; border-radius: 8px; border-left: 4px solid #007bff;">
-                  <div style="display: flex; justify-content: between; margin-bottom: 8px;">
-                    <span style="font-weight: bold; color: #4fc3f7;">Pergunta:</span>
-                    <span style="margin-left: 10px; font-size: 12px; background: #6c757d; padding: 2px 8px; border-radius: 10px;">\${qa.question_type}</span>
-                    <span style="margin-left: 10px; font-size: 12px; background: #\${getImportanceColor(qa.importance_level)}; padding: 2px 8px; border-radius: 10px;">\${qa.importance_level}</span>
-                  </div>
-                  <div style="margin-bottom: 8px;">\${qa.question}</div>
-                  <div style="font-weight: bold; color: #20c997;">Resposta:</div>
-                  <div>\${qa.answer}</div>
-                  <div style="font-size: 11px; color: #a0a0a0; margin-top: 5px;">\${new Date(qa.timestamp).toLocaleString()}</div>
-                </div>
-              \`;
-            });
+            form.appendChild(nomeInput);
+            form.appendChild(telInput);
+            form.appendChild(incidentInput);
             
-            container.innerHTML = html;
-          }
-          
-          function getImportanceColor(level) {
-            const colors = {
-              'critical': 'dc3545',
-              'high': 'fd7e14', 
-              'medium': 'ffc107',
-              'low': '6c757d'
-            };
-            return colors[level] || '6c757d';
-          }
-          
-          async function exportData() {
-            if (!currentCallSid) {
-              alert('Nenhuma chamada ativa para exportar');
-              return;
-            }
-            
-            window.open('/export-conversation/' + currentCallSid, '_blank');
+            document.body.appendChild(form);
+            form.submit();
           }
           
           function updateStatus() {
@@ -1810,6 +1449,7 @@ app.get("/", (req, res) => {
                   <div>🌐 Host: WORKSTATION-045</div>
                   <div>📍 IP Remoto: 185.62.128.44</div>
                   <div>🚨 Risco: Credenciais comprometidas + Macro</div>
+                  <div>⚠️ URL: secure-empresa-login[.]com</div>
                 </div>
               </div>
               
@@ -1823,7 +1463,7 @@ app.get("/", (req, res) => {
                   <div>🖥️ Servidor: srv-finance-03.corp.local</div>
                   <div>📍 IPs: 45.77.123.9 (C2), 104.21.12.34</div>
                   <div>⚙️ Processo: evil-encryptor.exe</div>
-                  <div>🚨 Alerta: Criptografia ativa</div>
+                  <div>🚨 Alerta: Criptografia ativa + Shadow copies</div>
                 </div>
               </div>
               
@@ -1863,18 +1503,6 @@ app.get("/", (req, res) => {
           </div>
           
           <div class="card">
-            <h3>📊 Dados Coletados em Tempo Real</h3>
-            <div id="collectedData" style="background: #2a3a4f; padding: 15px; border-radius: 8px; margin: 10px 0; min-height: 100px;">
-              <div style="text-align: center; color: #a0a0a0;">
-                Os dados aparecerão aqui durante a chamada...
-              </div>
-            </div>
-            <button onclick="exportData()" style="background: #17a2b8; width: auto; margin: 5px;">
-              📥 Exportar Conversa
-            </button>
-          </div>
-          
-          <div class="card">
             <h3>📊 Status do Sistema</h3>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
               <div style="text-align: center; padding: 20px; background: #2a3a4f; border-radius: 8px;">
@@ -1890,6 +1518,17 @@ app.get("/", (req, res) => {
             </div>
           </div>
         </div>
+        
+        <script>
+          function getCurrentDateTime() {
+            const now = new Date();
+            now.setHours(now.getHours() - 3);
+            return {
+              date: now.toISOString().split('T')[0],
+              time: now.toTimeString().split(' ')[0]
+            };
+          }
+        </script>
       </body>
     </html>
   `);
@@ -1902,11 +1541,10 @@ const PORT = process.env.PORT || 8080;
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Central de Segurança iniciada na porta ${PORT}`);
   console.log(`🤖 Gemini Model: ${model}`);
-  console.log(`🔊 Google TTS: pt-BR-Chirp3-HD-Leda`);
+  console.log(`🔊 Google TTS: ${ttsConfig.voice.name}`);
   console.log(`📁 Áudios servidos em: ${baseUrl}/audio/`);
   console.log(`🔗 Health: http://localhost:${PORT}/health`);
   console.log(`🎯 Sistema: Resposta a incidentes ATIVADA`);
-  console.log(`💾 Function Calling: Q&A Saving ATIVADO`);
   console.log(`🚨 Tipos de incidentes: phishing, ransomware, exfiltration`);
 });
 
