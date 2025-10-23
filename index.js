@@ -126,7 +126,7 @@ const generativeModel = vertex_ai.getGenerativeModel({
   model,
   generationConfig: {
     maxOutputTokens: 256,
-    temperature: 0.2,
+    temperature: 1,
     topP: 0.8,
   },
 });
@@ -379,211 +379,180 @@ class GeminiService {
     this.securityPrompts = {
       'phishing': {
     system: `
-    [TAREFA]  
-    Você é um agente de IA de Resposta a Incidentes (IR) em modo emergencial.  
-    O objetivo é confirmar detalhes do incidente e instruir ações imediatas de contenção.  
-    Não siga roteiros longos, nem introduções formais. Vá direto às perguntas críticas.  
-    Não invente fatos. Baseie-se apenas no CONTEXTO_DO_INCIDENTE injetado.  
-   
-    [INSTRUÇÕES RÁPIDAS]  
-    - Siga **estritamente** o [ROTEIRO DE INVESTIGAÇÃO] passo a passo.  
-    - Sempre **aguarde a resposta do usuário** antes de avançar para a próxima etapa.  
-    - Responda com **uma frase curta por vez**.  
-    - Tom: **profissional e urgente**.  
-    - **Não execute ações**, apenas colete informações, confirme fatos e recomende ações concretas quando solicitado (ex.: rotação de chaves, bloqueio de conta, verificação de logs).  
-    - Priorize a **verificação da legitimidade da transferência** e a **checagem de possível abuso de credenciais**.  
-    - Faça **uma pergunta de cada vez**; se não houver resposta, repita a pergunta até receber uma.  
-    - **ATENÇÃO:** as respostas serão convertidas para TTS, então:  
-    - **NUNCA use emojis, símbolos especiais ou caracteres como # ou ##, *, **, [], {}, <> ou /**.
-    - Use apenas vírgula, ponto, ponto de interrogação e ponto de exclamação.  
-    - Se o usuário fizer perguntas fora do roteiro, **responda apenas com base no contexto existente**, mas sempre tente **retornar à próxima etapa do roteiro**.  
-    - Se o usuário responder afirmativamente à inserção de credenciais, instrua de forma imediata o reset forçado de senha.  
-    - Não saia do foco do incidente.  
-    - Não encerre a conversa até todas as perguntas e instruções de contenção serem ditas. 
+        [TAREFA] Você é um agente de IA de Resposta a Incidentes (IR) em modo emergencial.
+        Seu objetivo é confirmar detalhes do incidente e instruir ações imediatas de contenção.
 
-    [CONTEXT0_DO_INCIDENTE]  
-    - Data: {data}
-    - Hora (UTC-3): {hora_utc3}
-    - Tipo de ataque: Phishing com possível validação de credenciais (link malicioso / formulário falso)
-    - Usuário afetado: {user_service}
-    - IP de Origem (cliente): {ip_origem_cliente}
-    - IP de Origem (remoto): {ip_origem_remoto}
-    - IP de Destino: {ip_destino}
-    - Porta / Protocolo: {port_protocol}
-    - Domínio / URL malicioso: {urls}
-    - Assinaturas / IoCs: {signatures_iocs}
-    - Hashes / anexos: {hashes_anexos}
-    - Evidências: {evidence}
-    - Severity: {severity}
-    - Observação crítica: {critical_note}
+        INSTRUÇÕES ABSOLUTAS
+        - Faça UMA pergunta por vez e aguarde resposta
+        - Linguagem urgente, clara e concisa
+        - Responda com uma frase curta por vez (máximo 2 frases).
+        - Se o usuário fizer perguntas fora do roteiro, responda apenas com base no contexto existente, mas tente retornar à próxima etapa do roteiro.
+        - Se o usuário pedir para repetir, ou que não entendeu, repita a pergunta.
+        - ATENÇÃO: as respostas serão convertidas para TTS, então:  
+            - NUNCA use emojis, símbolos especiais ou caracteres como # ou ##, *, **, [], {}, <> ou /**.
+            - Use apenas vírgula, ponto, ponto de interrogação e ponto de exclamação.  
 
-    INSTRUÇÕES ABSOLUTAS:
-        1. Você é um agente de segurança em modo de EMERGÊNCIA
-        2. Vá DIRETO às perguntas críticas - SEM introduções longas
-        3. Faça UMA pergunta por vez e AGUARDE a resposta
-        4. Foco total em confirmar comprometimento e conter danos
-        5. Linguagem URGENTE mas CLARA
-        6. Respostas CURTAS (máximo 2 frases)
+        [CONTEXTO DO INCIDENTE]
+            - Data: {data}
+            - Hora (UTC-3): {hora_utc3}
+            - Tipo de ataque: Phishing com possível validação de credenciais (link malicioso / formulário falso)
+            - Usuário afetado: {user_service}
+            - IP de Origem (cliente): {ip_origem_cliente}
+            - IP de Origem (remoto): {ip_origem_remoto}
+            - IP de Destino: {ip_destino}
+            - Porta / Protocolo: {port_protocol}
+            - Domínio / URL malicioso: {urls}
+            - Assinaturas / IoCs: {signatures_iocs}
+            - Hashes / anexos: {hashes_anexos}
+            - Evidências: {evidence}
+            - Severity: {severity}
+            - Observação crítica: {critical_note}
 
-        ROTEIRO OBRIGATÓRIO - SEGUIR NA ORDEM:
+        Passo 1. Passe ao Usuário um Resumo não técnico do problema, explicando o que aconteceu, como, quando, usando  o CONTEXTO DO INCIDENTE e, ao final, Pergunte ao Usuário:
+        "Você clicou no link e inseriu usuário ou senha?" (AGUARDE RESPOSTA)
 
-        PERGUNTA 1 (CREDENCIAIS):
-        "Você clicou no link e inseriu usuário e senha no site? Quando exatamente isso aconteceu?"
+        Passo 2. Pergunte ao Usuário:
+        "Quando exatamente? Usou outro dispositivo?" (AGUARDE RESPOSTA)
 
-        ➡️ AGUARDE RESPOSTA
+        Passo 3. Pergunte ao Usuário:
+        "Você abriu o anexo {hashes_anexos}? Foi solicitado habilitar macros ou executar algo?" (AGUARDE RESPOSTA)
 
-        PERGUNTA 2 (ANEXO):
-        "Você abriu o anexo {hashes_anexos}? Foi solicitado habilitar macros ou executar algo?"
+        Passo 4. Pergunte ao Usuário:
+        "Percebeu algum comportamento estranho no computador depois disso? Pop-ups, lentidão ou programas desconhecidos?" (AGUARDE RESPOSTA)
 
-        ➡️ AGUARDE RESPOSTA
-
-        PERGUNTA 3 (COMPORTAMENTO):
-        "Percebeu algum comportamento estranho no computador depois disso? Popups, lentidão ou programas desconhecidos?"
-
-        ➡️ AGUARDE RESPOSTA
-
-        AÇÕES IMEDIATAS:
-        - Se confirmar inserção de credenciais: Instruir para não usar credenciais e iniciar redefinição de senha (force reset).
-
-        NÃO SAIA DESTE ROTEIRO. NÃO ADICIONE INFORMAÇÕES EXTRAS.
-        Foque apenas em confirmar esses 3 pontos.
+        Passo 5. Com Base nas Respostas Anteriores:
+        - Se resposta confirmar inserção: instruir para não usar credenciais e iniciar redefinição de senha.
 
     `,
                 
-    welcome: `Crie uma mensagem URGENTE sobre infecção por PHISHING para {nome}.
-        Exemplo: "Olá. Estou ligando sobre um alerta de segurança crítico..."
-        Regras:
-        - Apenas UMA frase curta
-        - Seja amigável
-        - Linguagem natural
-        - Sempre **aguarde a resposta do usuário** antes de avançar para a próxima etapa.  
-        - Tom: **profissional e urgente**.  
+    welcome: `[TAREFA]  
+        Você é um assistente virtual da empresa ENE É.  
+        Seu objetivo é iniciar a conversa com o usuário sobre um problema de segurança.  
+
+        [INSTRUÇÕES]  
+        - Comece sempre dizendo: "Oi, sou assistente da empresa ENE É."  
+        - Informe de forma curta e clara que é sobre um problema de segurança.  
+        - Seja profissional, amigável e urgente.  
+        - Sempre aguarde resposta do usuário antes de prosseguir.  
+        - Use uma única frase curta para a abertura.  
+
+        [EXEMPLO DE FALA]  
+        "Oi, sou assistente da empresa ENE É. Estou entrando em contato para falar sobre um problema de segurança urgente. Você pode me conversar agora ?"
     `
     },
             
       'ransomware': {
         system: `
-    [TAREFA]  
-    Você é um agente de IA de Resposta a Incidentes (IR) em modo emergencial.  
-    O objetivo é confirmar detalhes do incidente e instruir ações imediatas de contenção.  
-    Não siga roteiros longos, nem introduções formais. Vá direto às perguntas críticas.  
-    Não invente fatos. Baseie-se apenas no CONTEXTO_DO_INCIDENTE injetado.  
-   
-    [INSTRUÇÕES RÁPIDAS]  
-    - Siga **estritamente** o [ROTEIRO DE INVESTIGAÇÃO] passo a passo.  
-    - Sempre **aguarde a resposta do usuário** antes de avançar para a próxima etapa.  
-    - Responda com **uma frase curta por vez**.  
-    - Tom: **profissional e urgente**.  
-    - **Não execute ações**, apenas colete informações, confirme fatos e recomende ações concretas quando solicitado (ex.: rotação de chaves, bloqueio de conta, verificação de logs).  
-    - Priorize a **verificação da legitimidade da transferência** e a **checagem de possível abuso de credenciais**.  
-    - Faça **uma pergunta de cada vez**; se não houver resposta, repita a pergunta até receber uma.  
-    - **ATENÇÃO:** as respostas serão convertidas para TTS, então:  
-    - **Não use emojis, símbolos especiais ou caracteres como #, *, [], {}, <> ou /**.  
-    - Use apenas vírgula, ponto, ponto de interrogação e ponto de exclamação.  
-    - Se o usuário fizer perguntas fora do roteiro, **responda apenas com base no contexto existente**, mas sempre tente **retornar à próxima etapa do roteiro**.  
-    - Não saia do foco do incidente.  
-    - Não encerre a conversa até todas as perguntas e instruções de contenção serem ditas. 
+            [TAREFA] Você é um agente de IA de Resposta a Incidentes (IR) em modo emergencial.
+            Seu objetivo é confirmar detalhes do incidente e instruir ações imediatas de contenção.
 
-        [CONTEXTO_DO_INCIDENTE]  
-        - Data: {data}  
-        - Hora (UTC-3): {hora_utc3}  
-        - Tipo de ataque: Ransomware (processo que executou rotina de criptografia)  
-        - Host afetado: {host_afetado}  
-        - IP de Origem (interno): {ip_origem_host_interno}  
-        - IPs Remotos: {ips_remotos}  
-        - Porta / Protocolo: {port_protocol}  
-        - Processos: {processos}  
-        - Evidências: {evidence}  
-        - Hash do binário: {hash_binario}  
-        - Severity: {severity}  
-        - Observação crítica: {critical_note}  
+            INSTRUÇÕES ABSOLUTAS
+            - Faça UMA pergunta por vez e aguarde resposta
+            - Linguagem urgente, clara e concisa
+            - Responda com uma frase curta por vez (máximo 2 frases).
+            - Se o usuário fizer perguntas fora do roteiro, responda apenas com base no contexto existente, mas tente retornar à próxima etapa do roteiro.
+            - Se o usuário pedir para repetir, ou que não entendeu, repita a pergunta.
+            - ATENÇÃO: as respostas serão convertidas para TTS, então:  
+                - NUNCA use emojis, símbolos especiais ou caracteres como # ou ##, *, **, [], {}, <> ou /**.
+                - Use apenas vírgula, ponto, ponto de interrogação e ponto de exclamação.  
 
-        INSTRUÇÕES ABSOLUTAS:
-        1. Modo EMERGÊNCIA - foco em diagnóstico rápido
-        2. APENAS 3 perguntas específicas na ordem abaixo
-        3. UMA pergunta por vez, AGUARDAR resposta antes de próxima
-        4. Linguagem URGENTE mas CLARA
-        5. Respostas CURTAS (1-2 frases no máximo)
+            [CONTEXTO DO INCIDENTE]
+            - Data: {data}
+            - Hora (UTC-3): {hora_utc3}
+            - Tipo de ataque: Phishing com possível validação de credenciais (link malicioso / formulário falso)
+            - Usuário afetado: {user_service}
+            - IP de Origem (cliente): {ip_origem_cliente}
+            - IP de Origem (remoto): {ip_origem_remoto}
+            - IP de Destino: {ip_destino}
+            - Porta / Protocolo: {port_protocol}
+            - Domínio / URL malicioso: {urls}
+            - Assinaturas / IoCs: {signatures_iocs}
+            - Hashes / anexos: {hashes_anexos}
+            - Evidências: {evidence}
+            - Severity: {severity}
+            - Observação crítica: {critical_note}
 
-        ROTEIRO OBRIGATÓRIO - SEGUIR NA ORDEM:
+            Passo 1. Passe ao Usuário um Resumo não técnico do problema, sem usar nomes complexos com ., explicando o que aconteceu, como, quando, usando  o CONTEXTO DO INCIDENTE e, ao final, Pergunte ao Usuário:
+            "Estava realizando alguma atualização ou processo noturno?" (AGUARDE RESPOSTA)
 
-        PERGUNTA 1 (ATIVIDADE PROGRAMADA):
-        "Estava realizando alguma atualização ou processo noturno no {host_afetado}? Havia tarefas agendadas?"
+            Passo 2. Pergunte ao Usuário:
+            "Havia tarefas agendadas? Observou arquivos inacessíveis?" (AGUARDE RESPOSTA)
 
-        ➡️ AGUARDE RESPOSTA COMPLETA
+            Passo 3. Avise ao Usuário para não desligar a máquina sem instruções
 
-        PERGUNTA 2 (ARQUIVOS):
-        "Observou arquivos inacessíveis ou com extensão alterada? Consegue verificar se os dados estão acessíveis?"
 
-        ➡️ AGUARDE RESPOSTA COMPLETA
-
-        AVISO CRÍTICO:
-        "IMPORTANTE: Não desligue a máquina sem instruções."
-
-        NÃO ADICIONE INFORMAÇÕES EXTRAS. FOCO NAS 2 PERGUNTAS E CONTENÇÃO.
         `,
-        welcome: `Crie uma mensagem URGENTE sobre infecção por RANSOMWARE para {nome}.
-        Exemplo: "Olá. Estou ligando sobre um alerta de segurança crítico..."
-        Regras:
-        - Apenas UMA frase curta
-        - Seja amigável
-        - Linguagem natural
-        - Sempre **aguarde a resposta do usuário** antes de avançar para a próxima etapa.  
-        - Tom: **profissional e urgente**.  
+    welcome: `[TAREFA]  
+        Você é um assistente virtual da empresa ENE É.  
+        Seu objetivo é iniciar a conversa com o usuário sobre um problema de segurança.  
+
+        [INSTRUÇÕES]  
+        - Comece sempre dizendo: "Oi, sou assistente da empresa ENE É."  
+        - Informe de forma curta e clara que é sobre um problema de segurança.  
+        - Seja profissional, amigável e urgente.  
+        - Sempre aguarde resposta do usuário antes de prosseguir.  
+        - Use uma única frase curta para a abertura.  
+
+        [EXEMPLO DE FALA]  
+        "Oi, sou assistente da empresa ENE É. Estou entrando em contato para falar sobre um problema de segurança urgente. Você pode me conversar agora ?"
     `
-      },
+    },
       
       'exfiltration': {
         system: `
-           [TAREFA]  
-    Você é um agente de IA de Resposta a Incidentes (IR) em modo emergencial.  
-    O objetivo é confirmar detalhes do incidente e instruir ações imediatas de contenção.  
-    Não siga roteiros longos, nem introduções formais. Vá direto às perguntas críticas.  
-    Não invente fatos. Baseie-se apenas no CONTEXTO_DO_INCIDENTE injetado.  
-   
-    [INSTRUÇÕES RÁPIDAS]  
-    - Siga **estritamente** o [ROTEIRO DE INVESTIGAÇÃO] passo a passo.  
-    - Sempre **aguarde a resposta do usuário** antes de avançar para a próxima etapa.  
-    - Responda com **uma frase curta por vez**.  
-    - Tom: **profissional e urgente**.  
-    - **Não execute ações**, apenas colete informações, confirme fatos e recomende ações concretas quando solicitado (ex.: rotação de chaves, bloqueio de conta, verificação de logs).  
-    - Priorize a **verificação da legitimidade da transferência** e a **checagem de possível abuso de credenciais**.  
-    - Faça **uma pergunta de cada vez**; se não houver resposta, repita a pergunta até receber uma.  
-    - **ATENÇÃO:** as respostas serão convertidas para TTS, então:  
-    - **Não use emojis, símbolos especiais ou caracteres como #, *, [], {}, <> ou /**.  
-    - Use apenas vírgula, ponto, ponto de interrogação e ponto de exclamação.  
-    - Se o usuário fizer perguntas fora do roteiro, **responda apenas com base no contexto existente**, mas sempre tente **retornar à próxima etapa do roteiro**.  
-    - Não saia do foco do incidente.  
-    - Não encerre a conversa até todas as perguntas e instruções de contenção serem ditas. 
+            [TAREFA] Você é um agente de IA de Resposta a Incidentes (IR) em modo emergencial.
+            Seu objetivo é confirmar detalhes do incidente e instruir ações imediatas de contenção.
 
+            INSTRUÇÕES ABSOLUTAS
+            - Faça UMA pergunta por vez e aguarde resposta
+            - Linguagem urgente, clara e concisa
+            - Responda com uma frase curta por vez (máximo 2 frases).
+            - Se o usuário fizer perguntas fora do roteiro, responda apenas com base no contexto existente, mas tente retornar à próxima etapa do roteiro.
+            - Se o usuário pedir para repetir, ou que não entendeu, repita a pergunta.
+            - ATENÇÃO: as respostas serão convertidas para TTS, então:  
+                - NUNCA use emojis, símbolos especiais ou caracteres como # ou ##, *, **, [], {}, <> ou /**.
+                - Use apenas vírgula, ponto, ponto de interrogação e ponto de exclamação.  
 
-        INSTRUÇÕES ABSOLUTAS:
-        1. Contato IMEDIATO com responsáveis pela service account e time de integrações
-        2. Foco em confirmar legitimidade da transferência
-        3. APENAS 3 perguntas específicas na ordem abaixo
-        4. UMA pergunta por vez, AGUARDAR resposta antes de próxima
-        5. Linguagem URGENTE mas CLARA
+            [CONTEXTO DO INCIDENTE]
+                - Data: {data}
+                - Hora (UTC-3): {hora_utc3}
+                - Tipo de ataque: Phishing com possível validação de credenciais (link malicioso / formulário falso)
+                - Usuário afetado: {user_service}
+                - IP de Origem (cliente): {ip_origem_cliente}
+                - IP de Origem (remoto): {ip_origem_remoto}
+                - IP de Destino: {ip_destino}
+                - Porta / Protocolo: {port_protocol}
+                - Domínio / URL malicioso: {urls}
+                - Assinaturas / IoCs: {signatures_iocs}
+                - Hashes / anexos: {hashes_anexos}
+                - Evidências: {evidence}
+                - Severity: {severity}
+                - Observação crítica: {critical_note}
 
-        ROTEIRO OBRIGATÓRIO - SEGUIR NA ORDEM:
+            Passo 1. Passe ao Usuário um Resumo não técnico do problema, sem usar nomes complexos com "." ou "-", explicando o que aconteceu, como, quando, usando  o CONTEXTO DO INCIDENTE e, ao final, Pergunte ao Usuário:
+            "Houve um job de sincronização ou processo programado ontem à noite?" (AGUARDE RESPOSTA)
 
-        PERGUNTA 1 (JOBS PROGRAMADOS):
-        "Teve algum job de sincronização ou processo programado ontem à noite no horário das {hora_utc3}?"
+            Passo 2. Pergunte ao Usuário: 
+                - SE Sim: "Quem executou? As chaves foram rotacionadas.
+                - SE NÃO: "As chaves foram rotacionadas recentemente?" (AGUARDE RESPOSTA)
 
-        ➡️ AGUARDE RESPOSTA COMPLETA
+            Passo 3. Confirme com o Usuário se o tráfego foi intencional (deploy, backup, migração)(Não precisa especificar o endereço, exceto se foi pedido)
 
-        PERGUNTA 2 (EXECUTOR):
-        "Quem executou essa transferência?"
+        `,
+    welcome: `[TAREFA]  
+        Você é um assistente virtual da empresa ENE É.  
+        Seu objetivo é iniciar a conversa com o usuário sobre um problema de segurança.  
 
-        ➡️ AGUARDE RESPOSTA COMPLETA
+        [INSTRUÇÕES]  
+        - Comece sempre dizendo: "Oi, sou assistente da empresa ENE É."  
+        - Informe de forma curta e clara que é sobre um problema de segurança.  
+        - Seja profissional, amigável e urgente.  
+        - Sempre aguarde resposta do usuário antes de prosseguir.  
+        - Use uma única frase curta para a abertura.  
 
-        PERGUNTA 3 (CREDENCIAIS):
-        "As chaves de API foram rotacionadas recentemente? Houve mudança nas credenciais?"
-
-        ➡️ AGUARDE RESPOSTA COMPLETA
-
-        CONFIRMAÇÃO FINAL:
-        "Confirmo então que esse tráfego de {volumes} para {remote_ip} foi intencional? Era deploy, backup ou migração?
-        `
+        [EXEMPLO DE FALA]  
+        "Oi, sou assistente da empresa ENE É. Estou entrando em contato para falar sobre um problema de segurança urgente. Você pode me conversar agora ?"
+    `
       },
       
       'default': {
@@ -1529,6 +1498,14 @@ app.post("/cancel-call", async (req, res) => {
 // =============================
 // 🎯 Página HTML com Incidentes de Segurança
 // =============================
+// =============================
+// 📊 Armazenamento de Resumos
+// =============================
+const callSummaries = new Map();
+
+// =============================
+// 🎯 Página HTML com Incidentes de Segurança e Resumos
+// =============================
 app.get("/", (req, res) => {
   res.send(`
     <html>
@@ -1540,6 +1517,7 @@ app.get("/", (req, res) => {
           .card { background: #1a2a3f; padding: 25px; margin: 20px 0; border-radius: 15px; border: 1px solid #2a3a4f; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
           button { background: #007bff; color: white; padding: 15px 30px; border: none; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: 600; transition: 0.3s; width: 100%; }
           button:hover { background: #0056b3; transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,123,255,0.4); }
+          button:disabled { background: #6c757d; cursor: not-allowed; transform: none; box-shadow: none; }
           input { width: 100%; padding: 15px; margin: 10px 0; border: 1px solid #2a3a4f; border-radius: 8px; font-size: 16px; box-sizing: border-box; background: #2a3a4f; color: white; }
           .incidents-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin: 25px 0; }
           .incident-card { 
@@ -1600,6 +1578,50 @@ app.get("/", (req, res) => {
           .form-group { margin: 20px 0; }
           label { display: block; margin-bottom: 8px; color: #a0a0a0; font-weight: 600; }
           
+          .summary-section { 
+            margin-top: 30px; 
+            padding: 20px; 
+            background: #2a3a4f; 
+            border-radius: 8px; 
+            border-left: 4px solid #007bff;
+          }
+          
+          .summary-item { 
+            margin: 15px 0; 
+            padding: 15px; 
+            background: #1a2a3f; 
+            border-radius: 8px; 
+            border: 1px solid #3a4a5f;
+          }
+          
+          .summary-header { 
+            display: flex; 
+            justify-content: between; 
+            margin-bottom: 10px; 
+            font-weight: bold;
+          }
+          
+          .summary-content { 
+            white-space: pre-wrap; 
+            font-family: monospace; 
+            font-size: 14px; 
+            line-height: 1.4;
+          }
+          
+          .loading { 
+            text-align: center; 
+            padding: 20px; 
+            color: #ffc107; 
+            font-style: italic;
+          }
+          
+          .empty-state { 
+            text-align: center; 
+            padding: 40px; 
+            color: #6c757d; 
+            font-style: italic;
+          }
+          
           @media (max-width: 768px) {
             .incidents-grid { grid-template-columns: 1fr; }
             .container { padding: 10px; }
@@ -1607,6 +1629,8 @@ app.get("/", (req, res) => {
         </style>
         <script>
           let selectedIncident = 'phishing';
+          let currentCallSid = null;
+          let callStatus = 'idle'; // idle, calling, active, completed
           
           function selectIncident(type, name) {
             const cards = document.querySelectorAll('.incident-card');
@@ -1646,7 +1670,7 @@ app.get("/", (req, res) => {
             return textMap[type];
           }
           
-          function makeCall() {
+          async function makeCall() {
             const nome = document.getElementById('nome').value;
             const telefone = document.getElementById('telefone').value;
             
@@ -1655,31 +1679,151 @@ app.get("/", (req, res) => {
               return;
             }
             
-            const form = document.createElement('form');
-            form.method = 'POST';
-            form.action = '/make-call';
+            if (callStatus !== 'idle') {
+              alert('Já existe uma chamada em andamento!');
+              return;
+            }
             
-            const nomeInput = document.createElement('input');
-            nomeInput.type = 'hidden';
-            nomeInput.name = 'nome';
-            nomeInput.value = nome;
+            // Atualizar UI para estado de chamada
+            updateCallStatus('calling');
             
-            const telInput = document.createElement('input');
-            telInput.type = 'hidden';
-            telInput.name = 'to';
-            telInput.value = telefone;
+            try {
+              const response = await fetch('/make-call', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: new URLSearchParams({
+                  nome: nome,
+                  to: telefone,
+                  incident_type: selectedIncident
+                })
+              });
+              
+              const data = await response.json();
+              
+              if (response.ok) {
+                currentCallSid = data.sid;
+                updateCallStatus('active');
+                
+                // Iniciar monitoramento do resumo
+                startSummaryPolling(data.sid);
+                
+                // Atualizar status a cada 2 segundos
+                const statusInterval = setInterval(async () => {
+                  if (callStatus === 'completed') {
+                    clearInterval(statusInterval);
+                    return;
+                  }
+                  
+                  try {
+                    const statusResponse = await fetch('/call-status-check?callSid=' + currentCallSid);
+                    const statusData = await statusResponse.json();
+                    
+                    if (statusData.status === 'completed') {
+                      updateCallStatus('completed');
+                      clearInterval(statusInterval);
+                    }
+                  } catch (error) {
+                    console.error('Erro verificando status:', error);
+                  }
+                }, 2000);
+                
+              } else {
+                throw new Error(data.error || 'Erro ao iniciar chamada');
+              }
+              
+            } catch (error) {
+              console.error('Erro na chamada:', error);
+              alert('Erro ao iniciar chamada: ' + error.message);
+              updateCallStatus('idle');
+            }
+          }
+          
+          function updateCallStatus(status) {
+            callStatus = status;
+            const callButton = document.getElementById('callButton');
+            const statusDisplay = document.getElementById('callStatus');
             
-            const incidentInput = document.createElement('input');
-            incidentInput.type = 'hidden';
-            incidentInput.name = 'incident_type';
-            incidentInput.value = selectedIncident;
+            switch(status) {
+              case 'idle':
+                callButton.textContent = '🚨 INICIAR CHAMADA DE EMERGÊNCIA';
+                callButton.disabled = false;
+                statusDisplay.innerHTML = '<div style="color: #6c757d;">Pronto para iniciar chamada</div>';
+                break;
+              case 'calling':
+                callButton.textContent = '📞 CONECTANDO...';
+                callButton.disabled = true;
+                statusDisplay.innerHTML = '<div style="color: #ffc107;">🔄 Iniciando chamada de segurança...</div>';
+                break;
+              case 'active':
+                callButton.textContent = '📞 CHAMADA EM ANDAMENTO';
+                callButton.disabled = true;
+                statusDisplay.innerHTML = '<div style="color: #28a745;">✅ Chamada ativa - Conversando com o analista...</div>';
+                break;
+              case 'completed':
+                callButton.textContent = '🔄 NOVA CHAMADA';
+                callButton.disabled = false;
+                statusDisplay.innerHTML = '<div style="color: #17a2b8;">✅ Chamada finalizada - Verifique o resumo abaixo</div>';
+                break;
+            }
+          }
+          
+          function startSummaryPolling(callSid) {
+            const interval = setInterval(async () => {
+              if (callStatus === 'completed') {
+                clearInterval(interval);
+                return;
+              }
+              
+              try {
+                const response = await fetch('/call-summary?callSid=' + callSid);
+                const data = await response.json();
+                
+                if (data.summary) {
+                  displaySummary(callSid, data.summary, data.incidentDetails);
+                }
+                
+                // Se a chamada foi completada no servidor, atualizar status
+                if (data.status === 'completed' && callStatus !== 'completed') {
+                  updateCallStatus('completed');
+                  clearInterval(interval);
+                }
+              } catch (error) {
+                console.error('Erro buscando resumo:', error);
+              }
+            }, 3000);
+          }
+          
+          function displaySummary(callSid, summary, incidentDetails) {
+            const summaryContainer = document.getElementById('summaryContainer');
+            const existingSummary = document.getElementById('summary-' + callSid);
             
-            form.appendChild(nomeInput);
-            form.appendChild(telInput);
-            form.appendChild(incidentInput);
+            if (existingSummary) {
+              // Atualizar resumo existente
+              existingSummary.querySelector('.summary-content').textContent = summary;
+            } else {
+              // Criar novo resumo
+              const summaryItem = document.createElement('div');
+              summaryItem.className = 'summary-item';
+              summaryItem.id = 'summary-' + callSid;
+              
+              summaryItem.innerHTML = \`
+                <div class="summary-header">
+                  <span>📞 Chamada: \${callSid}</span>
+                  <span>🚨 \${incidentDetails.attack_type} - \${incidentDetails.severity}</span>
+                </div>
+                <div class="summary-content">\${summary}</div>
+                <div style="margin-top: 10px; font-size: 12px; color: #6c757d;">
+                  👤 Analista: \${incidentDetails.nome} | 📅 \${new Date().toLocaleString()}
+                </div>
+              \`;
+              
+              summaryContainer.insertBefore(summaryItem, summaryContainer.firstChild);
+            }
             
-            document.body.appendChild(form);
-            form.submit();
+            // Mostrar a seção de resumos se estiver oculta
+            document.getElementById('summariesSection').style.display = 'block';
           }
           
           function updateStatus() {
@@ -1770,7 +1914,19 @@ app.get("/", (req, res) => {
               <input type="tel" id="telefone" placeholder="21994442087" value="21994442087" required>
             </div>
             
-            <button onclick="makeCall()">🚨 INICIAR CHAMADA DE EMERGÊNCIA</button>
+            <button id="callButton" onclick="makeCall()">🚨 INICIAR CHAMADA DE EMERGÊNCIA</button>
+            <div id="callStatus" style="text-align: center; margin-top: 15px; min-height: 24px;">
+              <div style="color: #6c757d;">Pronto para iniciar chamada</div>
+            </div>
+          </div>
+          
+          <div id="summariesSection" class="card" style="display: none;">
+            <h3>📊 Resumos das Chamadas</h3>
+            <div id="summaryContainer">
+              <div class="empty-state" id="emptySummary">
+                Nenhuma chamada realizada ainda. Os resumos aparecerão aqui automaticamente.
+              </div>
+            </div>
           </div>
           
           <div class="card">
@@ -1789,20 +1945,138 @@ app.get("/", (req, res) => {
             </div>
           </div>
         </div>
-        
-        <script>
-          function getCurrentDateTime() {
-            const now = new Date();
-            now.setHours(now.getHours() - 3);
-            return {
-              date: now.toISOString().split('T')[0],
-              time: now.toTimeString().split(' ')[0]
-            };
-          }
-        </script>
       </body>
     </html>
   `);
+});
+
+// =============================
+// 📊 Novos Endpoints para Resumos
+// =============================
+
+// Endpoint para verificar status da chamada
+app.get("/call-status-check", (req, res) => {
+  const { callSid } = req.query;
+  
+  if (!callSid) {
+    return res.status(400).json({ error: "callSid é obrigatório" });
+  }
+  
+  // Verificar se a chamada ainda está ativa
+  const isActive = activeSessions.has(callSid);
+  const hasSummary = callSummaries.has(callSid);
+  
+  res.json({
+    callSid: callSid,
+    status: isActive ? 'active' : 'completed',
+    hasSummary: hasSummary
+  });
+});
+
+// Endpoint para obter resumo da chamada
+app.get("/call-summary", (req, res) => {
+  const { callSid } = req.query;
+  
+  if (!callSid) {
+    return res.status(400).json({ error: "callSid é obrigatório" });
+  }
+  
+  const summary = callSummaries.get(callSid);
+  const isActive = activeSessions.has(callSid);
+  
+  if (summary) {
+    res.json({
+      callSid: callSid,
+      summary: summary.text,
+      incidentDetails: summary.incidentDetails,
+      status: isActive ? 'active' : 'completed',
+      timestamp: summary.timestamp
+    });
+  } else {
+    res.json({
+      callSid: callSid,
+      summary: null,
+      status: isActive ? 'active' : 'completed'
+    });
+  }
+});
+
+// =============================
+// 🔄 Modificação no Webhook de Status
+// =============================
+app.post("/call-status", async (req, res) => {
+  const { CallSid, CallStatus } = req.body;
+  
+  console.log(`📞 STATUS WEBHOOK: [${CallSid}] -> ${CallStatus}`);
+  
+  if (['completed', 'failed', 'busy', 'no-answer'].includes(CallStatus)) {
+    console.log(`🎯 Processando finalização para [${CallSid}]`);
+    
+    // VERIFICAÇÃO DETALHADA
+    const hasHistory = geminiService.conversationHistory.has(CallSid);
+    const hasUserData = geminiService.userData.has(CallSid);
+    
+    console.log(`📋 Dados disponíveis - Histórico: ${hasHistory}, UserData: ${hasUserData}`);
+    
+    if (hasHistory && hasUserData) {
+      console.log(`📝 INICIANDO PROCESSO DE RESUMO PARA [${CallSid}]`);
+      
+      try {
+        // 1. Gerar resumo
+        console.log(`🧠 Gerando resumo com Gemini...`);
+        const summary = await geminiService.generateSummary(CallSid);
+        console.log(`📝 Resumo gerado: ${summary ? 'SIM' : 'NÃO'}`);
+        
+        if (summary) {
+          // 2. Pegar dados de segurança
+          const securityData = geminiService.userData.get(CallSid);
+          console.log(`🔐 Dados segurança: ${securityData ? 'ENCONTRADOS' : 'NÃO ENCONTRADOS'}`);
+          
+          // 3. Armazenar resumo para exibição na tela
+          if (securityData) {
+            callSummaries.set(CallSid, {
+              text: summary,
+              incidentDetails: securityData,
+              timestamp: new Date().toISOString()
+            });
+            console.log(`✅ RESUMO ARMAZENADO PARA EXIBIÇÃO NA TELA!`);
+          }
+        }
+      } catch (error) {
+        console.error(`❌ ERRO NO PROCESSO DE RESUMO:`, error);
+      }
+    } else {
+      console.log(`⚠️ Dados insuficientes para resumo. Histórico vazio ou chamada muito curta.`);
+    }
+    
+    // Limpeza
+    geminiService.cleanup(CallSid);
+    responseQueue.cleanup(CallSid);
+    activeSessions.delete(CallSid);
+    pendingSecurityData.delete(CallSid);
+  }
+  
+  res.status(200).send("OK");
+});
+
+// Endpoint para limpar resumos antigos
+app.post("/clear-summaries", (req, res) => {
+  const { olderThan } = req.body; // em horas
+  const cutoffTime = Date.now() - (olderThan * 60 * 60 * 1000);
+  
+  let clearedCount = 0;
+  callSummaries.forEach((summary, callSid) => {
+    if (new Date(summary.timestamp).getTime() < cutoffTime) {
+      callSummaries.delete(callSid);
+      clearedCount++;
+    }
+  });
+  
+  res.json({
+    message: `Resumos antigos limpos`,
+    cleared: clearedCount,
+    remaining: callSummaries.size
+  });
 });
 
 // =============================
