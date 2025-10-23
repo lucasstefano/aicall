@@ -83,7 +83,7 @@ const ttsConfig = {
 class ResponseQueue {
   constructor() {
     this.queue = new Map();
-    this.processingDelay = 2000;
+    this.processingDelay = 1000;
     this.maxRetries = 3;
     this.audioFileCleanup = new Map();
   }
@@ -155,7 +155,7 @@ class ResponseQueue {
       callQueue.isProcessing = false;
       
       if (callQueue.responses.length > 0) {
-        const retryDelay = Math.min(5000 * response.retries, 30000);
+        const retryDelay = Math.min(3000 * response.retries, 15000);
         console.log(`🔄 Retentando TTS em ${retryDelay}ms...`);
         setTimeout(() => this.processQueue(callSid), retryDelay);
       }
@@ -311,25 +311,17 @@ class GeminiService {
         Você é um agente de IA de Segurança para Resposta a Incidentes.
         Seu objetivo é conduzir uma conversa curta e direta com o usuário afetado, confirmar detalhes do incidente e instruir ações imediatas de contenção.
 
-        
         [INSTRUÇÕES ABSOLUTAS]
-
-        Informe ao Usuário qual o incidente ocorreu de forma resumida.
-
+        Informe ao Usuário qual o incidente ocorrido de forma resumida.
         As respostas serão convertidas para TTS. Evite caracteres especiais, símbolos, emojis, pontuação excessiva ou palavras complexas.
-
         Faça uma pergunta por vez e aguarde a resposta do usuário.
-
         Use linguagem urgente, clara e concisa.
-
         Responda com uma frase curta por vez (máximo 2 frases).
-
-        Se o usuário fizer perguntas fora do roteiro, responda brevemente sobre o contexto existente, depois repita a pergunta pendente do roteiro.
-
-        Se o usuário pedir para repetir ou disser que não entendeu, repita a pergunta exatamente igual.
-
-        Se o usuário recusar responder, registre como "não informado" e avance para a próxima pergunta.
-
+        Se o usuário fizer perguntas fora do roteiro, responda apenas com base no contexto existente, mas retorne à próxima etapa do roteiro.
+        Se o usuário pedir para repetir ou disser que não entendeu, repita a pergunta.
+        Atenção TTS:
+          - Nunca use emojis, símbolos especiais ou caracteres como #, ##, *, **, [], {}, <>, /**.
+          - Use apenas vírgula, ponto, ponto de interrogação e ponto de exclamação.
 
         [OBJETIVO PRINCIPAL]
         -Capturar as seguintes informações do usuário:
@@ -379,22 +371,16 @@ class GeminiService {
         Seu objetivo é conduzir uma conversa curta e direta com o usuário afetado, confirmar detalhes do incidente e instruir ações imediatas de contenção.
 
         [INSTRUÇÕES ABSOLUTAS]
-
-        Informe ao Usuário qual o incidente ocorreu de forma resumida.
-
+        Informe ao Usuário qual o incidente ocorrido de forma resumida.
         As respostas serão convertidas para TTS. Evite caracteres especiais, símbolos, emojis, pontuação excessiva ou palavras complexas.
-
         Faça uma pergunta por vez e aguarde a resposta do usuário.
-
         Use linguagem urgente, clara e concisa.
-
         Responda com uma frase curta por vez (máximo 2 frases).
-
-        Se o usuário fizer perguntas fora do roteiro, responda brevemente sobre o contexto existente, depois repita a pergunta pendente do roteiro.
-
-        Se o usuário pedir para repetir ou disser que não entendeu, repita a pergunta exatamente igual.
-
-        Se o usuário recusar responder, registre como "não informado" e avance para a próxima pergunta.
+        Se o usuário fizer perguntas fora do roteiro, responda apenas com base no contexto existente, mas retorne à próxima etapa do roteiro.
+        Se o usuário pedir para repetir ou disser que não entendeu, repita a pergunta.
+        Atenção TTS:
+          - Nunca use emojis, símbolos especiais ou caracteres como #, ##, *, **, [], {}, <>, /**.
+          - Use apenas vírgula, ponto, ponto de interrogação e ponto de exclamação.
 
         [OBJETIVO PRINCIPAL]
         -Capturar as seguintes informações do usuário:
@@ -412,7 +398,7 @@ class GeminiService {
             - IP de Origem (remoto): {ip_origem_remoto}
             - IP de Destino: {ip_destino}
             - Porta / Protocolo: {port_protocol}
- 	          - Processos observados: {processos}
+              - Processos observados: {processos}
             - Evidências: {evidence}
             - Severity: {severity}
             - Observação crítica: {critical_note}
@@ -436,25 +422,17 @@ class GeminiService {
         Você é um agente de IA de Segurança para Resposta a Incidentes.
         Seu objetivo é conduzir uma conversa curta e direta com o usuário afetado, confirmar detalhes do incidente e instruir ações imediatas de contenção.
 
-        
         [INSTRUÇÕES ABSOLUTAS]
-
-        Informe ao Usuário qual o incidente ocorreu de forma resumida.
-
+        Informe ao Usuário qual o incidente ocorrido de forma resumida.
         As respostas serão convertidas para TTS. Evite caracteres especiais, símbolos, emojis, pontuação excessiva ou palavras complexas.
-
         Faça uma pergunta por vez e aguarde a resposta do usuário.
-
         Use linguagem urgente, clara e concisa.
-
         Responda com uma frase curta por vez (máximo 2 frases).
-
-        Se o usuário fizer perguntas fora do roteiro, responda brevemente sobre o contexto existente, depois repita a pergunta pendente do roteiro.
-
-        Se o usuário pedir para repetir ou disser que não entendeu, repita a pergunta exatamente igual.
-
-        Se o usuário recusar responder, registre como "não informado" e avance para a próxima pergunta.
-
+        Se o usuário fizer perguntas fora do roteiro, responda apenas com base no contexto existente, mas retorne à próxima etapa do roteiro.
+        Se o usuário pedir para repetir ou disser que não entendeu, repita a pergunta.
+        Atenção TTS:
+          - Nunca use emojis, símbolos especiais ou caracteres como #, ##, *, **, [], {}, <>, /**.
+          - Use apenas vírgula, ponto, ponto de interrogação e ponto de exclamação.
 
         [OBJETIVO PRINCIPAL]
         - Capturar as seguintes informações do usuário:
@@ -759,35 +737,37 @@ class GeminiService {
 const geminiService = new GeminiService();
 
 // =============================
-// 🎯 Configuração STT
-// =============================
-// =============================
-// 🎯 Configuração STT
+// 🎯 Configuração STT OTIMIZADA
 // =============================
 const sttConfig = {
- config: {
-  encoding: "MULAW",
-  sampleRateHertz: 8000,
-  languageCode: "pt-BR",
-  enableAutomaticPunctuation: true,
-  model: "phone_call",
-  useEnhanced: true,
-  speechContexts: [{
-   phrases: [
-    "Phishing", "ransomware", "exfiltration", "ataque", "segurança", "incidente",
-    "firewall", "antivírus", "quarentena", "isolamento", "mitigação",
-    "acesso", "credenciais", "senha", "vazamento", "dados", "criptografia",
-    "backup", "exfiltração", "credenciais", "macros", "malicioso"
-   ],
-   boost: 10.0
-  }]
- },
- interimResults: true,
- single_utterance: false
+  config: {
+    encoding: "MULAW",
+    sampleRateHertz: 8000,
+    languageCode: "pt-BR",
+    enableAutomaticPunctuation: true,
+    model: "phone_call",
+    useEnhanced: true,
+    speechContexts: [{
+      phrases: [
+        "sim", "não", "phishing", "ransomware", "exfiltration", "ataque", "segurança", "incidente",
+        "firewall", "antivírus", "quarentena", "isolamento", "mitigação", "acesso", "credenciais",
+        "senha", "vazamento", "dados", "criptografia", "backup", "exfiltração", "credenciais",
+        "macros", "malicioso", "cliquei", "link", "anexo", "computador", "dispositivo", "rede",
+        "suspeito", "estranho", "lentidão", "pop-up", "programa", "executar", "habilitei", "macro"
+      ],
+      boost: 15.0
+    }]
+  },
+  interimResults: true,
+  interimResultsThreshold: 0.5,
+  single_utterance: false,
+  noSpeechTimeout: 30,
+  enableVoiceActivityEvents: true,
+  speechEventTimeout: 5000
 };
 
 // =============================
-// 🎙️ Audio Stream Session
+// 🎙️ Audio Stream Session CORRIGIDA
 // =============================
 class AudioStreamSession {
   constructor(ws, callSid, securityData = null) {
@@ -803,6 +783,10 @@ class AudioStreamSession {
     this.healthCheckInterval = null;
     this.inactivityTimeout = null;
     this.lastActivityTime = Date.now();
+    this.reconnectAttempts = 0;
+    this.maxReconnectAttempts = 3;
+    this.mediaPacketsReceived = 0;
+    this.lastMediaPacketTime = Date.now();
     
     console.log(`🎧 Nova sessão de segurança: ${callSid}, Nome: ${securityData?.nome}, Tipo: ${securityData?.attack_type}`);
     this.setupSTT();
@@ -814,27 +798,29 @@ class AudioStreamSession {
     try {
       console.log(`🔧 Configurando STT para [${this.callSid}]`);
       
+      // Fecha stream anterior se existir
+      if (this.sttStream) {
+        try {
+          this.sttStream.removeAllListeners();
+          this.sttStream.destroy();
+        } catch (error) {
+          // Ignora erros na limpeza
+        }
+      }
+      
       this.sttStream = clientSTT
         .streamingRecognize(sttConfig)
         .on("data", (data) => {
           this.handleSTTData(data);
         })
-      .on("error", (error) => {
-           console.error(`❌ Erro STT [${this.callSid}]:`, error);
-           // Não espere por múltiplos erros, reinicie imediatamente.
-           this.consecutiveErrors++; // Ainda é bom contar, mas aja agora.
-           this.restartSTT(); // <-- Reinicia imediatamente
-          })
+        .on("error", (error) => {
+          console.error(`❌ Erro STT [${this.callSid}]:`, error);
+          this.consecutiveErrors++;
+          this.checkHealth();
+        })
         .on("end", () => {
-          console.log(`🔚 Stream STT finalizado [${this.callSid}]`);
-          if (this.isActive) {
-            console.log(`🔄 STT finalizado inesperadamente, recriando... [${this.callSid}]`);
-            setTimeout(() => {
-              if (this.isActive) {
-                this.setupSTT();
-              }
-            }, 1000);
-          }
+          console.log(`🔚 Stream STT finalizado normalmente [${this.callSid}]`);
+          // Não recria automaticamente - aguarda health check
         })
         .on("close", () => {
           console.log(`🔒 Stream STT fechado [${this.callSid}]`);
@@ -847,6 +833,7 @@ class AudioStreamSession {
     } catch (error) {
       console.error(`❌ Erro criando stream STT [${this.callSid}]:`, error);
       this.consecutiveErrors++;
+      this.attemptReconnect();
     }
   }
 
@@ -854,37 +841,89 @@ class AudioStreamSession {
     if (this.inactivityTimeout) {
       clearTimeout(this.inactivityTimeout);
     }
+    
+    // 🔥 CRÍTICO: Aumentado significativamente para chamadas telefônicas
     this.inactivityTimeout = setTimeout(() => {
-      console.log(`⏰ Timeout de inatividade [${this.callSid}], reiniciando STT por precaução...`);
-          // Força o reinício do STT para garantir que ele não esteja "preso"
-       this.restartSTT();
-      }, 30000);}
+      const timeSinceLastMedia = Date.now() - this.lastMediaPacketTime;
+      console.log(`⏰ Verificando inatividade [${this.callSid}]: ${timeSinceLastMedia}ms desde último pacote, ${this.mediaPacketsReceived} pacotes recebidos`);
+      
+      // Só reinicia se realmente não recebeu nenhum pacote de mídia
+      if (this.mediaPacketsReceived === 0) {
+        console.log(`🔄 Nenhum pacote de mídia recebido, verificando conexão... [${this.callSid}]`);
+        this.checkMediaConnection();
+      } else {
+        console.log(`📞 Pacotes de mídia recebidos: ${this.mediaPacketsReceived}, mantendo sessão ativa [${this.callSid}]`);
+        this.resetInactivityTimer(); // Continua monitorando
+      }
+    }, 120000); // 🔥 2 MINUTOS - tempo suficiente para respostas humanas
+  }
+
+  // 🔥 NOVO: Verifica especificamente a conexão de mídia
+  checkMediaConnection() {
+    const timeSinceLastMedia = Date.now() - this.lastMediaPacketTime;
+    
+    if (timeSinceLastMedia > 180000) { // 3 minutos sem mídia
+      console.log(`🚫 Sem pacotes de mídia há 3 minutos, limpando sessão [${this.callSid}]`);
+      this.cleanup();
+    } else if (timeSinceLastMedia > 120000 && this.mediaPacketsReceived === 0) {
+      console.log(`🔄 Tentando reinicialização completa do STT [${this.callSid}]`);
+      this.restartSTT();
+    }
+    // Caso contrário, mantém a sessão ativa
+  }
 
   startHealthCheck() {
     this.healthCheckInterval = setInterval(() => {
-      if (this.consecutiveErrors >= this.maxConsecutiveErrors) {
-        console.log(`🚑 Health check: Muitos erros consecutivos [${this.callSid}], reiniciando STT...`);
-        this.restartSTT();
-      }
-    }, 10000);
+      this.performHealthCheck();
+    }, 30000); // A cada 30 segundos
   }
 
-  restartSTT() {
-    console.log(`🔄 Reiniciando STT para [${this.callSid}]...`);
+  performHealthCheck() {
+    const now = Date.now();
+    const timeSinceLastActivity = now - this.lastActivityTime;
+    const timeSinceLastMedia = now - this.lastMediaPacketTime;
     
-    if (this.sttStream) {
-      this.sttStream.removeAllListeners();
-      this.sttStream.destroy();
-      this.sttStream = null;
+    console.log(`❤️ Health Check [${this.callSid}]: ${this.mediaPacketsReceived} pacotes, ${timeSinceLastMedia}ms desde última mídia, ${this.consecutiveErrors} erros`);
+    
+    // Só considera problema se não recebeu NENHUM pacote de mídia
+    if (this.mediaPacketsReceived === 0 && timeSinceLastMedia > 90000) {
+      console.log(`🚨 Health Check: Nenhum pacote de mídia recebido em 90s [${this.callSid}]`);
+      this.checkMediaConnection();
     }
     
-    this.consecutiveErrors = 0;
-    this.setupSTT();
+    if (this.consecutiveErrors >= this.maxConsecutiveErrors) {
+      console.log(`🚑 Health Check: Muitos erros consecutivos [${this.callSid}], reiniciando...`);
+      this.restartSTT();
+    }
   }
 
   checkHealth() {
-    if (this.consecutiveErrors >= this.maxConsecutiveErrors) {
-      this.restartSTT();
+    this.performHealthCheck();
+  }
+
+  restartSTT() {
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      console.log(`🚫 Máximo de tentativas de reconexão atingido [${this.callSid}]`);
+      this.cleanup();
+      return;
+    }
+    
+    this.reconnectAttempts++;
+    console.log(`🔄 Reiniciando STT (tentativa ${this.reconnectAttempts}/${this.maxReconnectAttempts}) para [${this.callSid}]...`);
+    
+    this.setupSTT();
+  }
+
+  attemptReconnect() {
+    if (this.reconnectAttempts < this.maxReconnectAttempts) {
+      const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 10000);
+      console.log(`🔄 Reconexão ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts} em ${delay}ms [${this.callSid}]`);
+      
+      setTimeout(() => {
+        if (this.isActive) {
+          this.restartSTT();
+        }
+      }, delay);
     }
   }
 
@@ -892,55 +931,92 @@ class AudioStreamSession {
     try {
       if (data.results && data.results[0]) {
         const result = data.results[0];
-        const transcript = result.alternatives[0].transcript.trim();
+        const transcript = result.alternatives[0]?.transcript?.trim();
         const isFinal = result.isFinal;
+        const stability = result.stability;
 
-        if (!transcript) return;
+        if (!transcript) {
+          // Log de resultados vazios para debug
+          if (data.results[0]?.alternatives?.length > 0) {
+            console.log(`🔇 STT retornou transcript vazio [${this.callSid}], stability: ${stability}`);
+          }
+          return;
+        }
 
         this.consecutiveErrors = 0;
+        this.lastActivityTime = Date.now();
         this.resetInactivityTimer();
 
-        if (isFinal) {
-          console.log(`📝 [FINAL] ${this.callSid} (${this.securityData?.nome}): ${transcript}`);
+        // 🔥 MELHORIA: Log mais informativo
+        const logType = isFinal ? 'FINAL' : (stability > 0.7 ? 'STABLE' : 'INTERIM');
+        console.log(`📝 [${logType}] ${this.callSid}: "${transcript}" (stability: ${stability})`);
+        
+        if (isFinal || (stability > 0.8 && transcript.length > 2)) {
+          const isSignificantChange = this.isSignificantTranscriptChange(transcript);
           
-          if (transcript !== this.lastFinalTranscript && transcript.length > 2) {
+          if (isSignificantChange) {
             this.lastFinalTranscript = transcript;
             await this.processWithGemini(transcript);
-          }
-          
-        } else {
-          if (transcript.length > 8) {
-            console.log(`🎯 [INTERIM] ${this.callSid} (${this.securityData?.nome}): ${transcript}`);
           }
         }
       }
     } catch (error) {
       console.error(`❌ Erro processando STT [${this.callSid}]:`, error);
       this.consecutiveErrors++;
-      this.checkHealth();
+      this.performHealthCheck();
     }
+  }
+
+  // 🔥 NOVO: Verifica se a transcrição é significativamente diferente da anterior
+  isSignificantTranscriptChange(newTranscript) {
+    if (!this.lastFinalTranscript) return true;
+    
+    const oldWords = this.lastFinalTranscript.toLowerCase().split(/\s+/);
+    const newWords = newTranscript.toLowerCase().split(/\s+/);
+    
+    // Calcula similaridade simples
+    const commonWords = oldWords.filter(word => newWords.includes(word));
+    const similarity = commonWords.length / Math.max(oldWords.length, newWords.length);
+    
+    // Considera significativo se similaridade < 60%
+    return similarity < 0.6;
   }
 
   async processWithGemini(transcript) {
     if (this.geminiProcessing) {
-      console.log(`⏳ Gemini ocupado [${this.callSid}], ignorando: ${transcript}`);
+      console.log(`⏳ Gemini ocupado [${this.callSid}], ignorando: "${transcript}"`);
       return;
     }
 
     this.geminiProcessing = true;
 
     try {
+      console.log(`🧠 Processando com Gemini: "${transcript}"`);
       const geminiResponse = await geminiService.generateResponse(this.callSid, transcript);
       
       if (geminiResponse && geminiResponse.length > 2) {
+        console.log(`✅ Resposta Gemini recebida: "${geminiResponse.substring(0, 50)}..."`);
         responseQueue.addResponse(this.callSid, geminiResponse);
       } else {
-        console.log(`⚠️ Resposta Gemini vazia para [${this.callSid}]`);
+        console.log(`⚠️ Resposta Gemini vazia ou muito curta para [${this.callSid}]`);
+        
+        // 🔥 MELHORIA: Fallback para resposta padrão
+        const fallbackResponse = "Não entendi completamente. Pode repetir por favor?";
+        responseQueue.addResponse(this.callSid, fallbackResponse);
       }
       
     } catch (error) {
       console.error(`❌ Erro processamento Gemini [${this.callSid}]:`, error);
       this.consecutiveErrors++;
+      
+      // 🔥 MELHORIA: Fallback em caso de erro
+      const fallbackResponses = [
+        "Houve um problema técnico. Pode repetir sua resposta?",
+        "Não consegui processar sua resposta. Pode falar novamente?",
+        "Estou com dificuldades técnicas. Pode reformular sua resposta?"
+      ];
+      const fallback = fallbackResponses[Math.floor(Math.random() * fallbackResponses.length)];
+      responseQueue.addResponse(this.callSid, fallback);
       
     } finally {
       this.geminiProcessing = false;
@@ -948,45 +1024,87 @@ class AudioStreamSession {
   }
 
   handleMedia(payload) {
+    this.mediaPacketsReceived++;
+    this.lastMediaPacketTime = Date.now();
+    this.lastActivityTime = Date.now();
+    
+    // Log a cada 100 pacotes para não poluir
+    if (this.mediaPacketsReceived % 100 === 0) {
+      console.log(`📦 [${this.callSid}] Pacotes de mídia recebidos: ${this.mediaPacketsReceived}`);
+    }
+    
     if (this.sttStream && this.isActive) {
       try {
         const audioBuffer = Buffer.from(payload, "base64");
         this.sttStream.write(audioBuffer);
         this.resetInactivityTimer();
       } catch (error) {
-        console.error(`❌ Erro processando áudio [${this.callSid}]:`, error);
+        console.error(`❌ Erro escrevendo no STT [${this.callSid}]:`, error);
         this.consecutiveErrors++;
-        this.checkHealth();
+        this.performHealthCheck();
+      }
+    } else if (this.isActive) {
+      console.log(`🔄 STT não disponível para pacote #${this.mediaPacketsReceived}, recriando... [${this.callSid}]`);
+      this.setupSTT();
+      
+      // Tenta processar o pacote após recriação
+      setTimeout(() => {
+        if (this.sttStream && this.isActive) {
+          try {
+            const audioBuffer = Buffer.from(payload, "base64");
+            this.sttStream.write(audioBuffer);
+          } catch (retryError) {
+            console.error(`❌ Erro no retry STT [${this.callSid}]:`, retryError);
+          }
+        }
+      }, 500);
+    }
+  }
+
+  // 🔥 MELHORIA: Manter sessão viva com heartbeats
+  sendHeartbeat() {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      try {
+        this.ws.ping();
+      } catch (error) {
+        console.error(`❌ Erro enviando heartbeat [${this.callSid}]:`, error);
       }
     }
   }
 
   cleanup() {
+    console.log(`🧹 Iniciando cleanup completo [${this.callSid}]`);
+    
     this.isActive = false;
     
+    // Limpa todos os intervalos e timeouts
     if (this.healthCheckInterval) {
       clearInterval(this.healthCheckInterval);
+      this.healthCheckInterval = null;
     }
     
     if (this.inactivityTimeout) {
       clearTimeout(this.inactivityTimeout);
+      this.inactivityTimeout = null;
     }
     
+    // Limpa STT stream
     if (this.sttStream) {
-      this.sttStream.removeAllListeners();
-      this.sttStream.destroy();
+      try {
+        this.sttStream.removeAllListeners();
+        this.sttStream.destroy();
+      } catch (error) {
+        // Ignora erros na destruição
+      }
       this.sttStream = null;
     }
-
-    geminiService.cleanup(this.callSid);
-    responseQueue.cleanup(this.callSid);
     
-    console.log(`🔚 Sessão de segurança finalizada [${this.callSid} - ${this.securityData?.nome}]`);
+    console.log(`🔚 Sessão finalizada [${this.callSid}] - ${this.mediaPacketsReceived} pacotes recebidos`);
   }
 }
 
 // =============================
-// 🔄 WebSocket Server
+// 🔄 WebSocket Server CORRIGIDO
 // =============================
 const wss = new WebSocketServer({ 
   noServer: true,
@@ -1003,17 +1121,24 @@ wss.on("connection", (ws, req) => {
   console.log("🎧 Nova conexão WebSocket de segurança");
   let session = null;
   let isAlive = true;
+  let callSid = null;
 
   const heartbeatInterval = setInterval(() => {
     if (ws.readyState === WebSocket.OPEN) {
       if (!isAlive) {
         console.log("💔 WebSocket inativo, terminando...");
-        return ws.terminate();
+        ws.terminate();
+        return;
       }
       isAlive = false;
       ws.ping();
+      
+      // 🔥 MELHORIA: Envia heartbeat para a sessão também
+      if (session) {
+        session.sendHeartbeat();
+      }
     }
-  }, 15000);
+  }, 10000); // Reduzido para 10 segundos
 
   ws.on("message", (msg) => {
     try {
@@ -1023,7 +1148,7 @@ wss.on("connection", (ws, req) => {
         case "start":
           console.log("🚀 Iniciando stream de segurança:", data.start.callSid);
           
-          const callSid = data.start.callSid;
+          callSid = data.start.callSid;
           const securityData = pendingSecurityData.get(callSid);
           
           if (activeSessions.has(callSid)) {
@@ -1063,45 +1188,56 @@ wss.on("connection", (ws, req) => {
             if (session.isActive) {
               session.handleMedia(data.media.payload);
             }
+          } else if (callSid) {
+            console.log(`🔁 Criando nova sessão para mídia recebida [${callSid}]`);
+            const securityData = pendingSecurityData.get(callSid) || geminiService.userData.get(callSid);
+            session = new AudioStreamSession(ws, callSid, securityData);
+            activeSessions.set(callSid, session);
           }
           break;
 
-       case "stop":
-        console.log("🛑 Parando stream:", data.stop.callSid);
-        if (session) {
+        case "stop":
+          console.log("🛑 Parando stream:", data.stop.callSid);
+          if (session) {
             session.isActive = false;
             console.log(`⏳ Stream parado, aguardando webhook de status... [${data.stop.callSid}]`);
             
+            // 🔥 MELHORIA: Cleanup mais inteligente
             setTimeout(() => {
-            if (session && activeSessions.has(data.stop.callSid)) {
+              if (session && activeSessions.has(data.stop.callSid)) {
                 console.log(`⏰ Timeout fallback - limpando sessão [${data.stop.callSid}]`);
                 session.cleanup();
                 activeSessions.delete(data.stop.callSid);
-                geminiService.cleanup(data.stop.callSid);
-                responseQueue.cleanup(data.stop.callSid);
-            }
-            }, 30000);
-        }
-        break; 
-     }
+              }
+            }, 45000); // Aumentado para 45 segundos
+          }
+          break;
+      }
     } catch (error) {
       console.error("❌ Erro processando mensagem WebSocket:", error);
     }
   });
 
   ws.on("close", (code, reason) => {
-    console.log(`🔌 WebSocket fechado: ${code} - ${reason}`);
+    console.log(`🔌 WebSocket fechado: ${code} - ${reason || 'Sem motivo'}`);
     clearInterval(heartbeatInterval);
     
+    // 🔥 MELHORIA: Lógica de reconexão melhorada
     if (session && (code === 1001 || code === 1006)) {
       console.log(`⏳ WebSocket desconectado, aguardando reconexão [${session.callSid}]`);
+      
+      // Mantém a sessão ativa por mais tempo aguardando reconexão
       setTimeout(() => {
-        if (session && session.ws?.readyState !== WebSocket.OPEN) {
+        if (session && (!session.ws || session.ws.readyState !== WebSocket.OPEN)) {
           console.log(`🚫 Timeout de reconexão [${session.callSid}], limpando...`);
           session.cleanup();
           activeSessions.delete(session.callSid);
         }
-      }, 30000);
+      }, 45000); // Aumentado para 45 segundos
+    } else if (session) {
+      // Para outros códigos de fechamento, limpa imediatamente
+      session.cleanup();
+      activeSessions.delete(session.callSid);
     }
   });
 
