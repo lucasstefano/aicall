@@ -1101,14 +1101,26 @@ wss.on("connection", (ws, req) => {
           }
           break;
 
-        case "stop":
-          console.log("🛑 Parando stream:", data.stop.callSid);
-          if (session) {
-            session.cleanup();
-            activeSessions.delete(data.stop.callSid);
-          }
-          break;
-      }
+       case "stop":
+        console.log("🛑 Parando stream:", data.stop.callSid);
+        if (session) {
+            // ✅ APENAS marca como inativa, NÃO limpa ainda
+            session.isActive = false;
+            console.log(`⏳ Stream parado, aguardando webhook de status... [${data.stop.callSid}]`);
+            
+            // ⏰ Timeout de fallback - se webhook não chegar em 30s, então limpa
+            setTimeout(() => {
+            if (session && activeSessions.has(data.stop.callSid)) {
+                console.log(`⏰ Timeout fallback - limpando sessão [${data.stop.callSid}]`);
+                session.cleanup();
+                activeSessions.delete(data.stop.callSid);
+                geminiService.cleanup(data.stop.callSid);
+                responseQueue.cleanup(data.stop.callSid);
+            }
+            }, 30000);
+        }
+        break; 
+     }
     } catch (error) {
       console.error("❌ Erro processando mensagem WebSocket:", error);
     }
